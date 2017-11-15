@@ -7,6 +7,8 @@
 /* global closeCurrentTab regExpTester messageBox */
 'use strict';
 
+const initBlockers = [];
+
 let styleId = null;
 // only the actually dirty items here
 let dirty = {};
@@ -361,6 +363,9 @@ function acmeEventListener(event) {
           value = null;
       }
       option = 'highlightSelectionMatches';
+      break;
+    case 'colorpicker':
+      value = value && {mode: 'edit'};
       break;
   }
   CodeMirror.setOption(option, value);
@@ -1297,8 +1302,7 @@ function beautify(event) {
     }
   }
 }
-
-onDOMready().then(init);
+onDOMready().then(() => Promise.all(initBlockers)).then(init);
 
 function init() {
   initCodeMirror();

@@ -1,5 +1,4 @@
-/* global CodeMirror prefs */
-
+/* global CodeMirror prefs editors initBlockers loadScript */
 'use strict';
 
 (function () {
@@ -123,4 +122,28 @@
     });
     return isBlank;
   });
+
+  const toggleColorpicker = (id, enabled) => {
+    const isStartup = !CodeMirror.setOption;
+    if (enabled) {
+      const task = loadScript([
+        '/vendor/codemirror/addon/colorpicker/colorpicker.css',
+        '/vendor-overwrites/codemirror/addon/colorpicker/colorpicker.js',
+        '/vendor-overwrites/codemirror/addon/colorpicker/colorview.js',
+      ]).then(() => {
+        if (isStartup) {
+          CodeMirror.defaults.colorpicker = {mode: 'edit'};
+        } else {
+          CodeMirror.setOption('colorpicker', {mode: 'edit', forceUpdate: true});
+        }
+      });
+      if (isStartup) {
+        initBlockers.push(task);
+      }
+    } else if (!isStartup) {
+      CodeMirror.setOption('colorpicker', false);
+    }
+  };
+  prefs.subscribe(['editor.colorpicker'], toggleColorpicker);
+  toggleColorpicker(null, prefs.get('editor.colorpicker'));
 })();

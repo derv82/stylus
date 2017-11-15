@@ -31,3 +31,8 @@
 .CodeMirror-search-hint {
   color: #888;
 }
+
+.codemirror-colorview {
+  vertical-align: middle;
+  top: -1px;
+}

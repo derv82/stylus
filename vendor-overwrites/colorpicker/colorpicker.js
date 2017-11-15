@@ -35,33 +35,26 @@
              * @param {"hex"/"rgb"} type  format string type
              * @returns {*}
              */
-            format : function(obj, type) {
-                if (type == 'hex') {
-                    var r = obj.r.toString(16);
-                    if (obj.r < 16) r = "0" + r;
-
-                    var g = obj.g.toString(16);
-                    if (obj.g < 16) g = "0" + g;
-
-                    var b = obj.b.toString(16);
-                    if (obj.b < 16) b = "0" + b;
-
-                    return "#" + [r, g, b].join("");
-                } else if (type == 'rgb') {
-                    if (typeof obj.a == 'undefined') {
-                        return "rgb(" + [obj.r, obj.g, obj.b].join(",") + ")";
-                    } else {
-                        return "rgba(" + [obj.r, obj.g, obj.b, obj.a].join(",") + ")";
+            format : function (obj, type) {
+                const {r, g, b, a = currentA, h, s, l} = obj;
+                const hasA = a >= 0 && a < 1;
+                switch (type) {
+                    case 'hex': {
+                        const rgbStr = (0x1000000 + (r << 16) + (g << 8) + (b | 0)).toString(16).slice(1);
+                        const aStr = hasA ? (0x100 + Math.round(a * 255)).toString(16).slice(1) : '';
+                        return "#" + (rgbStr + aStr).replace(/^(.)\1(.)\2(.)\3(?:(.)\4)?$/, '$1$2$3$4');
                     }
-                } else if (type == 'hsl') {
-                    if (typeof obj.a == 'undefined') {
-                        return "hsl(" + [obj.h, obj.s + '%', obj.l + '%'].join(",") + ")";
-                    } else {
-                        return "hsla(" + [obj.h, obj.s + '%', obj.l + '%', obj.a].join(",") + ")";
-                    }
+                    case 'rgb':
+                        return hasA ?
+                            `rgba(${r}, ${g}, ${b}, ${a})` :
+                            `rgb(${r}, ${g}, ${b})`;
+                    case 'hsl':
+                        return hasA ?
+                            `hsla(${h}, ${s}%, ${l}%, ${a})` :
+                            `hsl(${h}, ${s}%, ${l}%)`;
+                    default:
+                        return obj;
                 }
-
-                return obj;
             },
 
             /**
@@ -77,87 +70,24 @@
              * @returns {Object}  rgb object
              */
             parse : function (str) {
-                if (typeof str == 'string') {
-                    if (str.indexOf("rgb(") > -1) {
-                        var arr = str.replace("rgb(", "").replace(")","").split(",");
-
-                        for(var i = 0, len = arr.length; i < len; i++) {
-                            arr[i] = parseInt(color.trim(arr[i]), 10);
-                        }
-
-                        return { type : 'rgb', r : arr[0], g : arr[1], b : arr[2], a : 1	};
-                    } else if (str.indexOf("rgba(") > -1) {
-                        var arr = str.replace("rgba(", "").replace(")", "").split(",");
-
-                        for (var i = 0, len = arr.length; i < len; i++) {
-
-                            if (len - 1 == i) {
-                                arr[i] = parseFloat(color.trim(arr[i]));
-                            } else {
-                                arr[i] = parseInt(color.trim(arr[i]), 10);
-                            }
-                        }
-
-                        return {type: 'rgb', r: arr[0], g: arr[1], b: arr[2], a: arr[3]};
-                    } else if (str.indexOf("hsl(") > -1) {
-                        var arr = str.replace("hsl(", "").replace(")","").split(",");
-
-                        for(var i = 0, len = arr.length; i < len; i++) {
-                            arr[i] = parseInt(color.trim(arr[i]), 10);
-                        }
-
-                        var obj = { type : 'hsl', h : arr[0], s : arr[1], l : arr[2], a : 1	};
-
-                        var temp = color.HSLtoRGB(obj.h, obj.s, obj.l);
-
-                        obj.r = temp.r;
-                        obj.g = temp.g;
-                        obj.b = temp.b;
-
-                        return obj;
-                    } else if (str.indexOf("hsla(") > -1) {
-                        var arr = str.replace("hsla(", "").replace(")", "").split(",");
-
-                        for (var i = 0, len = arr.length; i < len; i++) {
-
-                            if (len - 1 == i) {
-                                arr[i] = parseFloat(color.trim(arr[i]));
-                            } else {
-                                arr[i] = parseInt(color.trim(arr[i]), 10);
-                            }
-                        }
-
-                        var obj = {type: 'hsl', h: arr[0], s: arr[1], l: arr[2], a: arr[3]};
-
-                        var temp = color.HSLtoRGB(obj.h, obj.s, obj.l);
-
-                        obj.r = temp.r;
-                        obj.g = temp.g;
-                        obj.b = temp.b;
-
-                        return obj;
-                    } else if (str.indexOf("#") == 0) {
-
-                        str = str.replace("#", "");
-
-                        var arr = [];
-                        if (str.length == 3) {
-                            for(var i = 0, len = str.length; i < len; i++) {
-                                var char = str.substr(i, 1);
-                                arr.push(parseInt(char+char, 16));
-                            }
-                        } else {
-                            for(var i = 0, len = str.length; i < len; i+=2) {
-                                arr.push(parseInt(str.substr(i, 2), 16));
-                            }
-                        }
-
-                        return { type : 'hex', r : arr[0], g : arr[1], b : arr[2], a : 1	};
-                    }
+                if (typeof str !== 'string') {
+                    return str;
                 }
-
-                return str;
-
+                if (str.includes('rgb')) {
+                    const [r, g, b, a = 1] = str.replace(/rgba?\(|\)/g, '').split(',').map(parseFloat);
+                    return {type: 'rgb', r, g, b, a};
+                } else if (str.includes('hsl')) {
+                    const [h, s, l, a = 1] = str.replace(/hsla?\(|\)/g, '').split(',').map(parseFloat);
+                    return Object.assign(color.HSLtoRGB(h, s, l), {type: 'hsl', a});
+                } else if (str.includes('#')) {
+                    str = str.trim().slice(1);
+                    const [r, g, b, a = 255] = str.length <= 4 ?
+                        str.match(/(.)/g).map(c => parseInt(c + c, 16)) :
+                        str.match(/(..)/g).map(c => parseInt(c, 16));
+                    return {type: 'hex', r, g, b, a: a === 255 ? undefined : a / 255};
+                } else {
+                    return str;
+                }
             },
 
             /**
@@ -192,9 +122,9 @@
                 else if (300 <= H && H < 360) { temp = [C, 0, X]; }
 
                 return {
-                    r : Math.ceil((temp[0] + m) * 255),
-                    g : Math.ceil((temp[1] + m) * 255),
-                    b : Math.ceil((temp[2] + m) * 255)
+                    r : Math.round((temp[0] + m) * 255),
+                    g : Math.round((temp[1] + m) * 255),
+                    b : Math.round((temp[2] + m) * 255)
                 };
             },
 
@@ -324,6 +254,8 @@
         var isShortCut = false;
         var hideDelay = 2000;
 
+        var prevFocusedElement;
+
         function dom(tag, className, attr) {
 
             if (typeof tag != 'string') {
@@ -387,14 +319,14 @@
 
         }
 
-        dom.prototype.html = function (html) {
-            this.el.innerHTML = html;
+        dom.prototype.setText = function (text) {
+            this.el.textContent = text;
 
             return this;
         }
 
         dom.prototype.empty = function () {
-            return this.html('');
+            return this.setText('');
         }
 
         dom.prototype.append = function (el) {
@@ -529,8 +461,8 @@
 
         function setHSLInput(h, s, l) {
             $hsl_h.val(h);
-            $hsl_s.val(s + '%');
-            $hsl_l.val(l + '%');
+            $hsl_s.val(s);
+            $hsl_l.val(l);
             $hsl_a.val(currentA);
         }
 
@@ -538,7 +470,8 @@
             return color.format({
                 r : $rgb_r.int(),
                 g : $rgb_g.int(),
-                b : $rgb_b.int()
+                b : $rgb_b.int(),
+                a : currentA,
             }, 'hex');
         }
 
@@ -555,21 +488,10 @@
             return color.RGBtoHSL(rgb.r, rgb.g, rgb.b);
         }
 
-        function getFormattedColor (format) {
-            format = format || 'hex';
-
-            if (format == 'rgb') {
-                var rgb = convertRGB();
-                rgb.a = currentA == 1 ? undefined : currentA;
-                return color.format(rgb, 'rgb');
-            } else if (format == 'hsl') {
-                var hsl = convertHSL();
-                hsl.a = currentA == 1 ? undefined : currentA;
-                return color.format(hsl, 'hsl');
-            } else {
-                var rgb = convertRGB();
-                return color.format(rgb, 'hex');
-            }
+        function getFormattedColor (format = 'hex') {
+            const converted = format === 'hsl' ? convertHSL() : convertRGB();
+            converted.a = currentA == 1 ? undefined : currentA;
+            return color.format(converted, format);
         }
 
         function setControlColor (color) {
@@ -599,11 +521,7 @@
             setOpacityColorBar(colorString);
 
             if (typeof colorpickerCallback == 'function') {
-
-                if (!isNaN(currentA)) {
-                    colorpickerCallback(getFormattedColor(format));
-                }
-
+                colorpickerCallback(getFormattedColor(format));
             }
         }
 
@@ -687,7 +605,7 @@
             var x = ($hueContainer.width() * (dist/100));
 
             $drag_bar.css({
-                left: (x -Math.ceil($drag_bar.width()/2)) + 'px'
+                left: (x -Math.round($drag_bar.width()/2)) + 'px'
             });
 
             $drag_bar.data('pos', { x : x});
@@ -761,7 +679,6 @@
             $opacity_drag_bar.data('pos', { x : x });
 
             caculateOpacity();
-            currentFormat();
             setInputColor();
         }
 
@@ -802,36 +719,27 @@
             return e;
         }
 
-        function checkNumberKey(e) {
-            var code = e.which,
-                isExcept = false;
-
-            if(code == 37 || code == 39 || code == 8 || code == 46 || code == 9)
-                isExcept = true;
-
-            if(!isExcept && (code < 48 || code > 57))
-                return false;
-
-            return true;
-        }
-
-        function setRGBtoHexColor(e) {
-            var r = $rgb_r.val(),
-                g = $rgb_g.val(),
-                b = $rgb_b.val();
-
-            if(r == "" || g == "" || b == "") return;
-
-            if(parseInt(r) > 255) $rgb_r.val(255);
-            else $rgb_r.val(parseInt(r));
-
-            if(parseInt(g) > 255) $rgb_g.val(255);
-            else $rgb_g.val(parseInt(g));
-
-            if(parseInt(b) > 255) $rgb_b.val(255);
-            else $rgb_b.val(parseInt(b));
-
-            initColor(getHexFormat());
+        function updateColorFromInput(e) {
+            const format = $information.data('format');
+            const inputs = [...$information.el.querySelectorAll(`.information-item.${format} input`)];
+            if (!inputs.every(el => el.checkValidity())) {
+                return;
+            }
+            let colorObj, hex, r, g, b, h, s, l, a;
+            switch (format) {
+                case 'hex':
+                    initColor(inputs[0].value.trim(), format);
+                    return;
+                case 'rgb':
+                    ([r, g, b, a] = inputs.map(el => parseFloat(el.value)));
+                    colorObj = {r, g, b, a};
+                    break;
+                case 'hsl':
+                    ([h, s, l, a] = inputs.map(el => parseFloat(el.value)));
+                    colorObj = {h, s, l, a};
+                    break;
+            }
+            initColor(color.format(colorObj, format));
         }
 
         function setColorUI() {
@@ -852,7 +760,7 @@
 
             $drag_bar.data('pos', { x : hueX });
 
-            var opacityX = $opacityContainer.width() * (currentA || 0);
+            var opacityX = $opacityContainer.width() * (isNaN(currentA) ? 1 : currentA);
 
             $opacity_drag_bar.css({
                 left : (opacityX - 7.5) + 'px'
@@ -897,6 +805,21 @@
             dom.removeEventListener(eventName, callback);
         }
 
+        function EventDialogKeyDown(e) {
+            if (!e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                switch (e.which) {
+                    case 13:
+                        colorpickerCallback(getFormattedColor($information.data('format')));
+                        // fall through to 27
+                    case 27:
+                        e.preventDefault();
+                        e.stopPropagation();
+                        hide();
+                        break;
+                }
+            }
+        }
+
         function EventColorMouseDown(e) {
             $color.data('isDown', true);
             setMainColor(e);
@@ -926,40 +849,19 @@
             setOpacity(e);
         }
 
-        function EventHexCodeKeyDown(e) {
-            if(e.which < 65 || e.which > 70) {
-                return checkNumberKey(e);
-            }
-        }
-
-        function EventHexCodeKeyUp (e) {
-            var code = $hexCode.val();
-
-            if(code.charAt(0) == '#' && code.length == 7) {
-                initColor(code);
-            }
-        }
-
         function EventFormatChangeClick(e) {
             nextFormat();
         }
 
         function initEvent() {
+            window.addEventListener('keydown', EventDialogKeyDown, true);
+            addEvent($root.el, 'input', updateColorFromInput);
             addEvent($color.el, 'mousedown', EventColorMouseDown);
             addEvent($color.el, 'mouseup', EventColorMouseUp);
             addEvent($drag_bar.el, 'mousedown', EventDragBarMouseDown);
             addEvent($opacity_drag_bar.el, 'mousedown', EventOpacityDragBarMouseDown);
             addEvent($hueContainer.el, 'mousedown', EventHueMouseDown);
             addEvent($opacityContainer.el, 'mousedown', EventOpacityMouseDown);
-            addEvent($hexCode.el, 'keydown', EventHexCodeKeyDown);
-            addEvent($hexCode.el, 'keyup', EventHexCodeKeyUp);
-
-            addEvent($rgb_r.el, 'keydown', checkNumberKey);
-            addEvent($rgb_r.el, 'keyup', setRGBtoHexColor);
-            addEvent($rgb_g.el, 'keydown', checkNumberKey);
-            addEvent($rgb_g.el, 'keyup', setRGBtoHexColor);
-            addEvent($rgb_b.el, 'keydown', checkNumberKey);
-            addEvent($rgb_b.el, 'keyup', setRGBtoHexColor);
 
             addEvent(document, 'mouseup', EventDocumentMouseUp);
             addEvent(document, 'mousemove', EventDocumentMouseMove);
@@ -1011,38 +913,20 @@
         }
 
         function destroy() {
+            window.removeEventListener('keydown', EventDialogKeyDown, true);
+            removeEvent($root.el, 'input', updateColorFromInput());
             removeEvent($color.el, 'mousedown', EventColorMouseDown);
             removeEvent($color.el, 'mouseup', EventColorMouseUp);
             removeEvent($drag_bar.el, 'mousedown', EventDragBarMouseDown);
             removeEvent($opacity_drag_bar.el, 'mousedown', EventOpacityDragBarMouseDown);
             removeEvent($hueContainer.el, 'mousedown', EventHueMouseDown);
             removeEvent($opacityContainer.el, 'mousedown', EventOpacityMouseDown);
-            removeEvent($hexCode.el, 'keydown', EventHexCodeKeyDown);
-            removeEvent($hexCode.el, 'keyup', EventHexCodeKeyUp);
-            removeEvent($rgb_r.el, 'keydown', checkNumberKey);
-            removeEvent($rgb_r.el, 'keyup', setRGBtoHexColor);
-            removeEvent($rgb_g.el, 'keydown', checkNumberKey);
-            removeEvent($rgb_g.el, 'keyup', setRGBtoHexColor);
-            removeEvent($rgb_b.el, 'keydown', checkNumberKey);
-            removeEvent($rgb_b.el, 'keyup', setRGBtoHexColor);
             removeEvent(document, 'mouseup', EventDocumentMouseUp);
             removeEvent(document, 'mousemove', EventDocumentMouseMove);
             removeEvent($formatChangeButton.el, 'click', EventFormatChangeClick);
 
             // remove color picker callback
             colorpickerCallback = undefined;
-        }
-
-        function currentFormat () {
-            var current_format = $information.data('format') || 'hex';
-            if (currentA < 1 && current_format == 'hex' ) {
-                var next_format = 'rgb';
-                $information.removeClass(current_format);
-                $information.addClass(next_format);
-                $information.data('format', next_format);
-
-                setInputColor();
-            }
         }
 
         function initFormat () {
@@ -1063,12 +947,9 @@
             } else if (current_format == 'rgb') {
                 next_format = 'hsl';
             } else if (current_format == 'hsl') {
-                if (currentA == 1) {
-                    next_format = 'hex';
-                } else {
-                    next_format = 'rgb';
-                }
+                next_format = 'hex';
             }
+            currentA = isNaN(currentA) ? 1 : currentA;
 
             $information.removeClass(current_format);
             $information.addClass(next_format);
@@ -1079,82 +960,84 @@
 
         function makeInputField(type) {
             var item = new dom('div', 'information-item '+ type);
+            const alphaPattern = /^\s*(0+\.?|0*\.\d+|0*1\.?|0*1\.0*)\s*$/.source;
 
             if (type == 'hex') {
                 var field = new dom('div', 'input-field hex');
 
-                $hexCode = new dom('input', 'input', { type : 'text' });
+                $hexCode = new dom('input', 'input', { type: 'text',
+                    pattern: /^\s*#([a-f\d]{3,4}|[a-f\d]{6}|[a-f\d]{8})\s*$/.source });
 
                 field.append($hexCode);
-                field.append(new dom('div', 'title').html('HEX'));
+                field.append(new dom('div', 'title').setText('HEX'));
 
                 item.append(field);
 
             } else if (type == 'rgb') {
                 var field = new dom('div', 'input-field rgb-r');
-                $rgb_r = new dom('input', 'input', { type : 'text' });
+                $rgb_r = new dom('input', 'input', { type: 'number', min: 0, max: 255, step: 1 });
 
                 field.append($rgb_r);
-                field.append(new dom('div', 'title').html('R'));
+                field.append(new dom('div', 'title').setText('R'));
 
                 item.append(field);
 
                 field = new dom('div', 'input-field rgb-g');
-                $rgb_g = new dom('input', 'input', { type : 'text' });
+                $rgb_g = new dom('input', 'input', { type: 'number', min: 0, max: 255, step: 1 });
 
                 field.append($rgb_g);
-                field.append(new dom('div', 'title').html('G'));
+                field.append(new dom('div', 'title').setText('G'));
 
                 item.append(field);
 
                 field = new dom('div', 'input-field rgb-b');
-                $rgb_b = new dom('input', 'input', { type : 'text' });
+                $rgb_b = new dom('input', 'input', { type: 'number', min: 0, max: 255, step: 1 });
 
                 field.append($rgb_b);
-                field.append(new dom('div', 'title').html('B'));
+                field.append(new dom('div', 'title').setText('B'));
 
                 item.append(field);
 
                 // rgba
                 field = new dom('div', 'input-field rgb-a');
-                $rgb_a = new dom('input', 'input', { type : 'text' });
+                $rgb_a = new dom('input', 'input', { type: 'text', pattern: alphaPattern });
 
                 field.append($rgb_a);
-                field.append(new dom('div', 'title').html('A'));
+                field.append(new dom('div', 'title').setText('A'));
 
                 item.append(field);
 
             } else if (type == 'hsl') {
                 var field = new dom('div', 'input-field hsl-h');
-                $hsl_h = new dom('input', 'input', { type : 'text' });
+                $hsl_h = new dom('input', 'input', { type: 'number', step: 1 });
 
                 field.append($hsl_h);
-                field.append(new dom('div', 'title').html('H'));
+                field.append(new dom('div', 'title').setText('H'));
 
                 item.append(field);
 
                 field = new dom('div', 'input-field hsl-s');
-                $hsl_s = new dom('input', 'input', { type : 'text' });
+                $hsl_s = new dom('input', 'input', { type: 'number', min: 0, max: 100, step: 1 });
 
                 field.append($hsl_s);
-                field.append(new dom('div', 'title').html('S'));
+                field.append(new dom('div', 'title').setText('S'));
 
                 item.append(field);
 
                 field = new dom('div', 'input-field hsl-l');
-                $hsl_l = new dom('input', 'input', { type : 'text' });
+                $hsl_l = new dom('input', 'input', { type: 'number', min: 0, max: 100, step: 1 });
 
                 field.append($hsl_l);
-                field.append(new dom('div', 'title').html('L'));
+                field.append(new dom('div', 'title').setText('L'));
 
                 item.append(field);
 
                 // rgba
                 field = new dom('div', 'input-field hsl-a');
-                $hsl_a = new dom('input', 'input', { type : 'text' });
+                $hsl_a = new dom('input', 'input', { type: 'text', pattern: alphaPattern });
 
                 field.append($hsl_a);
-                field.append(new dom('div', 'title').html('A'));
+                field.append(new dom('div', 'title').setText('A'));
 
                 item.append(field);
             }
@@ -1187,7 +1070,7 @@
 
             $informationChange = new dom('div', 'information-change');
 
-            $formatChangeButton = new dom('button', 'format-change-button', { type : 'button'}).html('↔');
+            $formatChangeButton = new dom('button', 'format-change-button', { type : 'button'}).setText('↔');
             $informationChange.append($formatChangeButton);
 
 
@@ -1289,6 +1172,7 @@
         }
 
         function show (opt, color,  callback) {
+            prevFocusedElement = document.activeElement;
             destroy();
             initEvent();
             $root.appendTo(document.body);
@@ -1348,6 +1232,10 @@
                 $root.hide();
                 $root.remove();
                 isColorPickerShow = false;
+                if (prevFocusedElement) {
+                    prevFocusedElement.focus();
+                    prevFocusedElement = null;
+                }
             }
 
         }

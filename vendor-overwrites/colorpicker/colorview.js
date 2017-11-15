@@ -33,6 +33,10 @@
         if (val)
         {
             cm.state.colorpicker = new codemirror_colorpicker(cm, val);
+            if (val.forceUpdate) {
+              delete val.forceUpdate;
+              cm.state.colorpicker.style_color_update();
+            }
         }
     });
 
@@ -48,16 +52,8 @@
     }
 
     function onUpdate(cm, evt) {
-        if (!cm.state.colorpicker.isUpdate) {
-            cm.state.colorpicker.isUpdate = true;
-            cm.state.colorpicker.close_color_picker();
-            cm.state.colorpicker.init_color_update();
-            cm.state.colorpicker.style_color_update();
-        }
-    }
-
-    function onRefresh(cm, evt) {
-        onChange(cm, { origin : 'setValue'});
+        cm.off('update', onUpdate);
+        onPaste(cm);
     }
 
     function onKeyup(cm, evt) {
@@ -127,7 +123,6 @@
         }
 
         this.init_event();
-
     }
 
     codemirror_colorpicker.prototype.init_event = function () {
@@ -136,7 +131,6 @@
         this.cm.on('keyup', onKeyup);
         this.cm.on('change', onChange);
         this.cm.on('update', onUpdate);
-        this.cm.on('refresh', onRefresh);
 
         // create paste callback
         this.onPasteCallback = (function (cm, callback) {
@@ -149,7 +143,8 @@
 
         if (this.is_edit_mode())
         {
-            this.cm.on('scroll', debounce(onScroll, 50));
+            this.onScrollCallback = debounce(onScroll, 50);
+            this.cm.on('scroll', this.onScrollCallback);
         }
 
     }
@@ -166,12 +161,21 @@
         this.cm.off('mousedown', onMousedown);
         this.cm.off('keyup', onKeyup);
         this.cm.off('change', onChange)
+        this.cm.off('update', onUpdate);
         this.cm.getWrapperElement().removeEventListener('paste', this.onPasteCallback);
 
         if (this.is_edit_mode())
         {
-            this.cm.off('scroll');
+            this.cm.off('scroll', this.onScrollCallback);
         }
+
+        this.cm.operation(() => {
+            for (const mark of this.cm.getAllMarks()) {
+                if (has_class(mark.replacedWith, colorpicker_class)) {
+                    mark.clear();
+                }
+            }
+        });
     }
 
     codemirror_colorpicker.prototype.hasClass = function (el, className) {
@@ -259,7 +263,6 @@
 
 
     codemirror_colorpicker.prototype.keyup = function (evt) {
-
         if (this.colorpicker ) {
             if (evt.key == 'Escape') {
                 this.colorpicker.hide();
@@ -273,18 +276,45 @@
         this.markers = {};  // initialize marker list
     }
 
-    codemirror_colorpicker.prototype.style_color_update = function (lineHandle) {
-
-        if (lineHandle) {
-            this.match(lineHandle);
+    codemirror_colorpicker.prototype.style_color_update = function (lineNo) {
+        if (lineNo !== undefined) {
+            this.match(lineNo);
         } else {
-            var max = this.cm.lineCount();
-
-            for(var lineNo = 0; lineNo < max; lineNo++) {
-                this.match(lineNo);
-            }
+            const t0 = performance.now();
+            const renderedView = this.cm.display.renderedView;
+            const topLine = this.cm.display.viewFrom;
+            let bottomLine = this.cm.doc.size - 1;
+            let inComment = this.cm.getTokenAt({line: topLine, ch: 0}).type === 'comment';
+            let i = 0;
+            this.cm.operation(() => {
+              renderedView.forEach(lineView => {
+                  if (lineView.line.parent) {
+                      ({inComment} = this.match(topLine + i++, lineView.line, inComment));
+                  }
+              });
+              for (let line = topLine + i; line <= bottomLine; line++) {
+                  if (performance.now() - t0 > 20) {
+                      bottomLine = line - 1;
+                      break;
+                  }
+                  ({inComment} = this.match(line, undefined, inComment));
+              }
+            });
+            setTimeout(updateInvisible, 100, this, topLine, bottomLine);
         }
 
+    }
+
+    function updateInvisible(self, topLine, bottomLine) {
+        var i = 0;
+        self.cm.startOperation();
+        self.cm.doc.eachLine(function(line) {
+            if (i < topLine || i > bottomLine) {
+                self.match(i, line);
+            }
+            i++;
+        });
+        self.cm.endOperation();
     }
 
     codemirror_colorpicker.prototype.empty_marker = function (lineNo, lineHandle) {
@@ -301,33 +331,75 @@
         }
     }
 
-    codemirror_colorpicker.prototype.color_regexp = /(#(?:[\da-f]{3}){1,2}|rgb\((?:\s*\d{1,3},\s*){2}\d{1,3}\s*\)|rgba\((?:\s*\d{1,3},\s*){3}\d*\.?\d+\s*\)|hsl\(\s*\d{1,3}(?:,\s*\d{1,3}%){2}\s*\)|hsla\(\s*\d{1,3}(?:,\s*\d{1,3}%){2},\s*\d*\.?\d+\s*\)|([\w_\-]+))/gi;
+    codemirror_colorpicker.prototype.color_regexp = new RegExp([
+      /#(?:[\da-f]{3,4}){1,2}\b/,
+      /\brgb\((?:\s*\d{1,3},\s*){2}\d{1,3}\s*\)/,
+      /\brgba\((?:\s*\d{1,3},\s*){3}\d*\.?\d+\s*\)/,
+      /\bhsla?\(\s*(?:-?\d+|-?\d*\.\d+)(?:%|deg|g?rad|turn|)\s*,\s*(?:-?\d+|-?\d*\.\d+)%\s*,\s*(?:-?\d+|-?\d*\.\d+)%(?:\s*,\s*(?:-?\d+|-?\d*\.\d+))?\s*\)/,
+      '(?:^|[^-\\w])(' + Object.keys(color_names).join('|') + ')(?:[^-\\w]|$)',
+    ].map(rx => rx.source || rx).join('|'), 'gi');
 
-    codemirror_colorpicker.prototype.match_result = function (lineHandle) {
-        return lineHandle.text.match(this.color_regexp);
+    codemirror_colorpicker.prototype.match_result = function (text, inComment) {
+        const results = [];
+        let start = inComment ? text.indexOf('*/') : 0;
+        if (start < 0) {
+            return {inComment: true};
+        }
+        start += 2;
+        let end;
+        do {
+            end = text.indexOf('/*', start);
+            end = end < 0 ? text.length : end;
+            if (start < end) {
+                const chunk = text.substring(start, end);
+                for (let m; m = this.color_regexp.exec(chunk); ) {
+                    results.push([m[0], m.index + start]);
+                }
+            }
+            if (end === text.length) {
+                break;
+            }
+            start = text.indexOf('*/', end);
+            inComment = start < 0;
+            start += 2;
+        } while (!inComment);
+        results.inComment = inComment;
+        return results;
     }
 
-    codemirror_colorpicker.prototype.match = function (lineNo) {
-        var lineHandle = this.cm.getLineHandle(lineNo);
-
+    codemirror_colorpicker.prototype.match = function (
+        lineNo,
+        lineHandle = this.cm.getLineHandle(lineNo),
+        inComment
+    ) {
         this.empty_marker(lineNo, lineHandle);
-
-        var result = this.match_result(lineHandle);
-        if (result)
-        {
-            var obj = { next : 0 };
-            for(var i = 0, len = result.length; i < len; i++) {
-
-                if (result[i].indexOf('#') > -1 || result[i].indexOf('rgb') > -1 || result[i].indexOf('hsl') > -1) {
-                    this.render(obj, lineNo, lineHandle, result[i]);
-                } else {
-                    var nameColor = color_names[result[i]];
-                    if (nameColor) {
-                        this.render(obj, lineNo, lineHandle, result[i], nameColor);
-                    }
+        const results = this.match_result(lineHandle.text, inComment);
+        if (!results.length) {
+            return results;
+        }
+        const obj = {next: 0};
+        for (const [str, ch] of results) {
+            const maybeHex = str.startsWith('#');
+            if (maybeHex && isNaN(parseInt(str.charAt(1)))) {
+                const pos = {line: lineNo, ch: ch + 1};
+                const type = lineHandle.styles && this.cm.getTokenTypeAt(pos).type ||
+                    this.cm.getTokenAt(pos).type;
+                if (type && type !== 'atom') {
+                    continue;
+                }
+            }
+            if (maybeHex || str.startsWith('rgb') || str.startsWith('hsl')) {
+                this.render(obj, lineNo, ch, str);
+            } else {
+                var name = str.replace(/^[^-\w]|[^-\w]$/g, '');
+                var nameColor = color_names[name];
+                if (nameColor) {
+                    this.render(obj, lineNo, ch + (name.startsWith(str) ? 0 : 1),
+                        name, nameColor);
                 }
             }
         }
+        return results;
     }
 
     codemirror_colorpicker.prototype.make_element = function () {
@@ -408,18 +480,17 @@
         return count > 0;   // true is that it has a excluded token
     }
 
-    codemirror_colorpicker.prototype.render = function (cursor, lineNo, lineHandle, color, nameColor) {
-        var start = lineHandle.text.indexOf(color, cursor.next);
-
-        if (this.is_excluded_token(lineNo, start) === true) {
-            // excluded token do not show.
-            return;
-        }
-
+    codemirror_colorpicker.prototype.render = function (
+        cursor, lineNo, start, color, nameColor
+    ) {
         cursor.next = start + color.length;
 
-        if (this.has_marker(lineNo, start))
-        {
+        //if (this.is_excluded_token(lineNo, start) === true) {
+        //    // excluded token do not show.
+        //    return;
+        //}
+
+        if (this.has_marker(lineNo, start)) {
             this.update_element(this.create_marker(lineNo, start), nameColor || color);
             this.set_state(lineNo, start, color, nameColor);
             return;

@@ -32,8 +32,9 @@
 
 .codemirror-colorpicker {
   position: relative;
-  width: 226px;
+  width: 350px;
   z-index: 1000;
+  --switcher-width: 30px;
 }
 .codemirror-colorpicker > .color {
   position: relative;
@@ -159,13 +160,13 @@
   -webkit-box-sizing: border-box;
   -moz-box-sizing: border-box;
   box-sizing: border-box;
-  margin-right:40px;
+  margin-right:calc(var(--switcher-width) - 10px);
 }
 
 .codemirror-colorpicker > .information > .information-change {
   position:absolute;
   display:block;
-  width:40px;
+  width:var(--switcher-width);
   top:0px;
   right:0px;
   bottom:0px;
@@ -182,11 +183,32 @@
 
 .codemirror-colorpicker > .information > .information-item > .input-field {
   display:block;
+  position:relative;
   flex:1;
   padding: 5px;
   -webkit-box-sizing: border-box;
   -moz-box-sizing: border-box;
   box-sizing: border-box;
+}
+
+.codemirror-colorpicker > .information > .information-item > .input-field[class$="-a"] {
+  flex-grow: 1.5;
+}
+
+.codemirror-colorpicker > .information > .information-item > .input-field.hsl-h::before {
+  content: "°";
+  position: absolute;
+  right: -2px;
+  top: 8px;
+}
+
+.codemirror-colorpicker > .information > .information-item > .input-field.hsl-s::before,
+.codemirror-colorpicker > .information > .information-item > .input-field.hsl-l::before {
+  content: "%";
+  position: absolute;
+  right: -1ex;
+  top: 8px;
+  font-size: 10px;
 }
 
 .codemirror-colorpicker > .information > .information-item > .input-field > input {
@@ -206,6 +228,10 @@
   border: 1px solid #cbcbcb;
 }
 
+.codemirror-colorpicker > .information > .information-item > .input-field > input:invalid {
+  border-color: darkred;
+  background-color: rgba(255, 0, 0, .1);
+}
 .codemirror-colorpicker > .information > .information-item > .input-field > .title {
   text-align:center;
   font-size:12px;

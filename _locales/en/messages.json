@@ -127,6 +127,10 @@
     "message": "Autocomplete on typing",
     "description": "Label for the checkbox in the style editor."
   },
+  "cm_colorpicker": {
+    "message": "Colorpickers for CSS colors",
+    "description": "Label for the checkbox controlling colorpicker option for the style editor."
+  },
   "cm_indentWithTabs": {
     "message": "Use tabs with smart indentation",
     "description": "Label for the checkbox controlling tabs with smart indentation option for the style editor."
