@@ -127,14 +127,15 @@
     const isStartup = !CodeMirror.setOption;
     if (enabled) {
       const task = loadScript([
-        '/vendor/codemirror/addon/colorpicker/colorpicker.css',
-        '/vendor-overwrites/codemirror/addon/colorpicker/colorpicker.js',
-        '/vendor-overwrites/codemirror/addon/colorpicker/colorview.js',
+        '/vendor-overwrites/colorpicker/colorpicker.css',
+        '/vendor-overwrites/colorpicker/colorpicker.js',
+        '/vendor-overwrites/colorpicker/colorview.js',
       ]).then(() => {
+        const tooltip = t('colorpickerTooltip');
         if (isStartup) {
-          CodeMirror.defaults.colorpicker = {mode: 'edit'};
+          CodeMirror.defaults.colorpicker = {tooltip};
         } else {
-          CodeMirror.setOption('colorpicker', {mode: 'edit', forceUpdate: true});
+          CodeMirror.setOption('colorpicker', {tooltip, forceUpdate: true});
         }
       });
       if (isStartup) {

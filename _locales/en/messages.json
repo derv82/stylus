@@ -175,6 +175,10 @@
     "message": "Theme",
     "description": "Label for the style editor's CSS theme."
   },
+  "colorpickerTooltip": {
+    "message": "open color picker",
+    "description": "Tooltip on the colored squares shown before CSS colors in the style editor."
+  },
   "dysfunctional": {
     "message": "Stylus cannot function in private windows because Firefox disallows direct connection to the internal background page context of the extension.",
     "description": "Displayed in Firefox when its settings make Stylus dysfunctional"

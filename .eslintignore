@@ -1,2 +1,6 @@
 vendor/
-vendor-overwrites/
+vendor-overwrites/*
+
+!vendor-overwrites/colorpicker
+vendor-overwrites/colorpicker/*
+!vendor-overwrites/colorpicker/colorview.js
