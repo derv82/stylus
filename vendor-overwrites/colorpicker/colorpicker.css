@@ -35,6 +35,10 @@
   width: 350px;
   z-index: 1000;
   --switcher-width: 30px;
+  transition: opacity .5s;
+}
+.codemirror-colorpicker[data-fading] {
+  opacity: .75;
 }
 .codemirror-colorpicker > .color {
   position: relative;

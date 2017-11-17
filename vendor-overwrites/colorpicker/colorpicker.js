@@ -257,6 +257,7 @@
 
         var prevFocusedElement;
         var lastOutputColor;
+        var userActivity;
 
         function dom(tag, className, attr) {
 
@@ -770,6 +771,7 @@
             if (!inputs.every(validateInput)) {
                 return;
             }
+            userActivity = true;
             let colorObj, hex, r, g, b, h, s, l, a;
             switch (format) {
                 case 'hex':
@@ -866,6 +868,7 @@
 
         function EventColorMouseDown(e) {
             $color.data('isDown', true);
+            userActivity = true;
             setMainColor(e);
         }
 
@@ -875,25 +878,30 @@
 
         function EventDragBarMouseDown (e) {
             e.preventDefault();
+            userActivity = true;
             $hue.data('isDown', true);
         }
 
         function EventOpacityDragBarMouseDown(e) {
             e.preventDefault();
+            userActivity = true;
             $opacity.data('isDown', true);
         }
 
         function EventHueMouseDown (e) {
             $hue.data('isDown', true);
+            userActivity = true;
             setHueColor(e);
         }
 
         function EventOpacityMouseDown (e) {
             $opacity.data('isDown', true);
+            userActivity = true;
             setOpacity(e);
         }
 
         function EventFormatChangeClick(e) {
+            userActivity = true;
             nextFormat();
         }
 
@@ -1258,25 +1266,36 @@
 
 
         var timerCloseColorPicker;
+        var timerFadeColorPicker;
         function setHideDelay (delayTime) {
             delayTime = delayTime || 0;
             removeEvent($root.el, 'mouseenter');
             removeEvent($root.el, 'mouseleave');
 
             addEvent($root.el, 'mouseenter', function () {
-               clearTimeout(timerCloseColorPicker);
+                clearTimeout(timerCloseColorPicker);
+                clearTimeout(timerFadeColorPicker);
+                if ($root.el.dataset.fading) {
+                  delete $root.el.dataset.fading;
+                }
             });
 
             addEvent($root.el, 'mouseleave', function () {
-                if ($root.el.contains(document.activeElement)) {
-                    return;
-                }
-                clearTimeout(timerCloseColorPicker);
-                timerCloseColorPicker = setTimeout(hide, delayTime);
+                clearTimeout(timerFadeColorPicker);
+                timerFadeColorPicker = setTimeout(fade, delayTime / 2);
             });
 
-            clearTimeout(timerCloseColorPicker);
-            timerCloseColorPicker = setTimeout(hide, delayTime);
+            clearTimeout(timerFadeColorPicker);
+            timerFadeColorPicker = setTimeout(fade, delayTime / 2);
+
+            function fade() {
+                clearTimeout(timerCloseColorPicker);
+                if (userActivity && $root.el.contains(document.activeElement)) {
+                    return;
+                }
+                $root.el.dataset.fading = true;
+                timerCloseColorPicker = setTimeout(hide, delayTime);
+            }
         }
 
         function hide () {
