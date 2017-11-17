@@ -497,9 +497,9 @@
             return color.RGBtoHSL(rgb.r, rgb.g, rgb.b);
         }
 
-        function getFormattedColor (format = $information.data('format')) {
+        function getFormattedColor (format = $information.data('format'), alpha = currentA) {
             const converted = format === 'hsl' ? convertHSL() : convertRGB();
-            converted.a = currentA == 1 ? undefined : currentA;
+            converted.a = isNaN(alpha) || alpha === 1 ? undefined : alpha;
             return color.format(converted, format);
         }
 
@@ -745,11 +745,7 @@
                 isValid = parseAsNumber(el, parseFloat);
             }
             if (isAlpha && isValid) {
-                const currentAcopy = currentA;
-                currentA = parseFloat(el.value);
-                currentA = isNaN(currentA) ? 1 : currentA;
-                isValid = getFormattedColor() !== lastOutputColor;
-                currentA = currentAcopy;
+                isValid = getFormattedColor(undefined, parseFloat(el.value)) !== lastOutputColor;
             }
             return isValid;
         }
