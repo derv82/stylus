@@ -118,7 +118,7 @@
           const pos = {line, ch: ch + 1};
           const type = lineHandle.styles && this.cm.getTokenTypeAt(pos).type ||
             this.cm.getTokenAt(pos).type;
-          if (type && type !== 'atom') {
+          if (type === 'builtin') {
             continue;
           }
         }
