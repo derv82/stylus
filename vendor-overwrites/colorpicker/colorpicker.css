@@ -170,6 +170,7 @@
   top:0px;
   right:0px;
   bottom:0px;
+  overflow: hidden;
 }
 
 .codemirror-colorpicker > .information > .information-change > .format-change-button {
@@ -179,6 +180,9 @@
   border:0px;
   cursor:pointer;
   outline:none;
+  font-family: monospace !important;
+  font-size: var(--switcher-width) !important;
+  margin-top: -8px;
 }
 
 .codemirror-colorpicker > .information > .information-item > .input-field {

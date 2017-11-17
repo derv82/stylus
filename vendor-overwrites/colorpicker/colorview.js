@@ -59,12 +59,13 @@
 
   class ColorMarker {
     constructor(cm, {
-      tooltip = 'open color picker',
+      tooltip = 'Open color picker',
+      tooltipForSwitcher = 'Switch formats: HEX -> RGB -> HSL',
       hideDelay = 2000,
       colorpicker,
     } = {}) {
       this.cm = cm;
-      this.opt = {tooltip, hideDelay};
+      this.opt = {tooltip, tooltipForSwitcher, hideDelay};
       this.popup = cm.colorpicker ? cm.colorpicker() : colorpicker;
       this.registerEvents();
     }
@@ -173,6 +174,7 @@
         top: coords.bottom,
         isShortCut: el.isShortCut || false,
         hideDelay: this.opt.hideDelay,
+        tooltipForSwitcher: this.opt.tooltipForSwitcher,
       }, actualColor, newColor => {
         this.cm.replaceRange(newColor, pos, {line, ch: ch + prevColor.length}, '*colorpicker');
         prevColor = newColor;

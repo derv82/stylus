@@ -1210,9 +1210,6 @@
         }
 
         function show (opt, color,  callback) {
-            prevFocusedElement = document.activeElement;
-            lastOutputColor = color;
-            destroy();
             initEvent();
             $root.appendTo(document.body);
 
@@ -1230,6 +1227,10 @@
 
             isShortCut = opt.isShortCut || false;
 
+            lastOutputColor = color;
+            prevFocusedElement = document.activeElement;
+            $formatChangeButton.el.title = opt.tooltipForSwitcher || '';
+
             initColor(color);
 
             // define colorpicker callback
@@ -1245,7 +1246,6 @@
             if (hideDelay > 0) {
                 setHideDelay(hideDelay);
             }
-
         }
 
 

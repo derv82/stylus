@@ -131,12 +131,16 @@
         '/vendor-overwrites/colorpicker/colorpicker.js',
         '/vendor-overwrites/colorpicker/colorview.js',
       ]).then(() => {
-        const tooltip = t('colorpickerTooltip');
-        const hideDelay = 5000;
+        const options = {
+          tooltip: t('colorpickerTooltip'),
+          tooltipForSwitcher: t('colorpickerSwitchFormatTooltip'),
+          hideDelay: 5000,
+        };
         if (isStartup) {
-          CodeMirror.defaults.colorpicker = {tooltip, hideDelay};
+          CodeMirror.defaults.colorpicker = options;
         } else {
-          CodeMirror.setOption('colorpicker', {tooltip, hideDelay, forceUpdate: true});
+          options.forceUpdate = true;
+          CodeMirror.setOption('colorpicker', options);
         }
       });
       if (isStartup) {
