@@ -36,8 +36,9 @@
              * @returns {*}
              */
             format : function (obj, type) {
-                const {r, g, b, a = currentA, h, s, l} = obj;
-                const hasA = a >= 0 && a < 1;
+                const {r, g, b, h, s, l} = obj;
+                const a = getAlphaString(obj.a === undefined ? 1 : obj.a);
+                const hasA = !!a;
                 switch (type) {
                     case 'hex': {
                         const rgbStr = (0x1000000 + (r << 16) + (g << 8) + (b | 0)).toString(16).slice(1);
@@ -452,18 +453,25 @@
             return this.css('display', 'none');
         }
 
+        function getAlphaString(a = currentA) {
+            return a === undefined ? '' :
+                a.toString().slice(0, 8)
+                    .replace(/(\.[^0]*)0+$/, '$1')
+                    .replace(/^1$/, '');
+        }
+
         function setRGBInput(r, g, b) {
             $rgb_r.val(r);
             $rgb_g.val(g);
             $rgb_b.val(b);
-            $rgb_a.val(currentA);
+            $rgb_a.val(getAlphaString());
         }
 
         function setHSLInput(h, s, l) {
             $hsl_h.val(h);
             $hsl_s.val(s);
             $hsl_l.val(l);
-            $hsl_a.val(currentA);
+            $hsl_a.val(getAlphaString());
         }
 
         function getHexFormat() {
@@ -722,7 +730,9 @@
         function updateColorFromInput(e) {
             const format = $information.data('format');
             const inputs = [...$information.el.querySelectorAll(`.information-item.${format} input`)];
-            if (!inputs.every(el => el.checkValidity())) {
+            if (!inputs.every(el =>
+                    (el.value.trim() || el.matches('.rgb-a input, .hsl-a input')) &&
+                    el.checkValidity())) {
                 return;
             }
             let colorObj, hex, r, g, b, h, s, l, a;
@@ -960,13 +970,13 @@
 
         function makeInputField(type) {
             var item = new dom('div', 'information-item '+ type);
-            const alphaPattern = /^\s*(0+\.?|0*\.\d+|0*1\.?|0*1\.0*)\s*$/.source;
+            const alphaPattern = /^\s*(0+\.?|0*\.\d+|0*1\.?|0*1\.0*)?\s*$/.source;
 
             if (type == 'hex') {
                 var field = new dom('div', 'input-field hex');
 
                 $hexCode = new dom('input', 'input', { type: 'text',
-                    pattern: /^\s*#([a-f\d]{3,4}|[a-f\d]{6}|[a-f\d]{8})\s*$/.source });
+                    pattern: /^\s*#([a-fA-F\d]{3}([a-fA-F\d]([a-fA-F\d]{2}([a-fA-F\d]{2})?)?)?)\s*$/.source });
 
                 field.append($hexCode);
                 field.append(new dom('div', 'title').setText('HEX'));
@@ -1145,15 +1155,16 @@
             return rgb;
         }
 
-        function definePostion (opt) {
+        function definePosition (opt) {
 
             var width = $root.width();
             var height = $root.height();
 
             // set left position for color picker
             var elementScreenLeft = opt.left - $body.el.scrollLeft ;
-            if (width + elementScreenLeft > window.innerWidth) {
-                elementScreenLeft -= (width + elementScreenLeft) - window.innerWidth;
+            const bodyWidth = document.body.scrollWidth;
+            if (width + elementScreenLeft > bodyWidth) {
+                elementScreenLeft -= (width + elementScreenLeft) - bodyWidth;
             }
             if (elementScreenLeft < 0) { elementScreenLeft = 0; }
 
@@ -1185,7 +1196,7 @@
 
             $root.show();
 
-            definePostion(opt);
+            definePosition(opt);
 
             isColorPickerShow = true;
 
@@ -1195,7 +1206,7 @@
 
             // define colorpicker callback
             colorpickerCallback = function (colorString) {
-                callback(colorString);
+                callback(colorString.replace(/\b0\./g, '.'));
             }
 
             // define hide delay
