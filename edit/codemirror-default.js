@@ -123,33 +123,25 @@
     return isBlank;
   });
 
-  const toggleColorpicker = (id, enabled) => {
-    const isStartup = !CodeMirror.setOption;
-    if (enabled) {
-      const task = loadScript([
-        '/vendor-overwrites/colorpicker/colorpicker.css',
-        '/vendor-overwrites/colorpicker/colorpicker.js',
-        '/vendor-overwrites/colorpicker/colorview.js',
-      ]).then(() => {
-        const options = {
-          tooltip: t('colorpickerTooltip'),
-          tooltipForSwitcher: t('colorpickerSwitchFormatTooltip'),
-          hideDelay: 5000,
-        };
-        if (isStartup) {
-          CodeMirror.defaults.colorpicker = options;
-        } else {
-          options.forceUpdate = true;
-          CodeMirror.setOption('colorpicker', options);
-        }
-      });
+  const toggleColorpicker = (id, enabled) =>
+    Promise.resolve(enabled && loadScript([
+      '/vendor-overwrites/colorpicker/colorpicker.css',
+      '/vendor-overwrites/colorpicker/colorpicker.js',
+      '/vendor-overwrites/colorpicker/colorview.js',
+    ])).then(() => {
+      const isStartup = !CodeMirror.setOption;
+      const options = enabled && {
+        tooltip: t('colorpickerTooltip'),
+        tooltipForSwitcher: t('colorpickerSwitchFormatTooltip'),
+        hideDelay: 5000,
+        forceUpdate: !isStartup,
+      };
       if (isStartup) {
-        initBlockers.push(task);
+        CodeMirror.defaults.colorpicker = options;
+      } else {
+        CodeMirror.setOption('colorpicker', options);
       }
-    } else if (!isStartup) {
-      CodeMirror.setOption('colorpicker', false);
-    }
-  };
+    });
+  initBlockers.push(toggleColorpicker(null, prefs.get('editor.colorpicker')));
   prefs.subscribe(['editor.colorpicker'], toggleColorpicker);
-  toggleColorpicker(null, prefs.get('editor.colorpicker'));
 })();

@@ -365,8 +365,7 @@ function acmeEventListener(event) {
       option = 'highlightSelectionMatches';
       break;
     case 'colorpicker':
-      value = value && {mode: 'edit'};
-      break;
+      return;
   }
   CodeMirror.setOption(option, value);
 }
