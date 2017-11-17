@@ -19,7 +19,9 @@
     /\brgba\((?:\s*\d{1,3},\s*){3}\d*\.?\d+\s*\)/,
     /\bhsl\(\s*(?:-?\d+|-?\d*\.\d+)\s*(?:,\s*(?:-?\d+|-?\d*\.\d+)%\s*){2}\)/,
     /\bhsla\(\s*(?:-?\d+|-?\d*\.\d+)\s*(?:,\s*(?:-?\d+|-?\d*\.\d+)%\s*){2},\s*(?:-?\d+|-?\d*\.\d+)\s*\)/,
-    '(?:^|[^-\\w])(' + Object.keys(NAMED_COLORS).join('|') + ')(?:[^-\\w]|$)',
+    /(?:^|[^-\w.`~@#$%^&*+_;/\\?<>|])/.source +
+      '(' + Object.keys(NAMED_COLORS).join('|') + ')' +
+      /(?:[^-\w.`~@#$%^&*+_;/\\?<>|]|$)/.source,
   ].map(rx => rx.source || rx).join('|'), 'gi');
 
   const CM_EVENTS = {
@@ -114,13 +116,16 @@
         data.inComment = this.cm.getTokenAt({line, ch: 0}).type === 'comment';
       }
 
+      let tokenData;
+
       for (const [ch, str, actualColor = str] of findColors(lineHandle.text, data)) {
-        if (str.startsWith('#') && isNaN(parseInt(str.charAt(1)))) {
-          const pos = {line, ch: ch + 1};
-          const type = lineHandle.styles && this.cm.getTokenTypeAt(pos).type ||
-            this.cm.getTokenAt(pos).type;
-          if (type === 'builtin') {
-            continue;
+        const maybeHex = str.startsWith('#');
+        if (maybeHex && isNaN(parseInt(str.charAt(1))) || !maybeHex && !str.includes('(')) {
+          tokenData = tokenData || {line, lineHandle, cm: this.cm, index: 0};
+          switch (getTokenType(tokenData, ch + 1)) {
+            case 'builtin':
+            case 'tag':
+              continue;
           }
         }
         this.cm.setBookmark({line, ch}, {
@@ -268,6 +273,37 @@
       start += 2;
     } while (!data.inComment);
     return colors;
+  }
+
+  function getTokenType(data, ch) {
+    if (data.lineHandle.styles) {
+      return getTokenTypeFromStyles(data, ch);
+    }
+    const tokens = data.tokens = data.tokens || data.cm.getLineTokens(data.line);
+    while (data.index < tokens.length) {
+      const token = tokens[data.index];
+      if (token.start <= ch && ch <= token.end) {
+        return token.type;
+      }
+      data.index += 2;
+    }
+    return null;
+  }
+
+  function getTokenTypeFromStyles(data, ch) {
+    // styles array: [modeGen, endCh1, style1, endCh2, style2, ...]
+    const styles = data.lineHandle.styles;
+    let index = data.index || 1;
+    let type;
+    while (index < styles.length) {
+      if (styles[index] > ch) {
+        type = index > 1 && styles[index + 1];
+        break;
+      }
+      index += 2;
+    }
+    data.index = index;
+    return type && type.replace('overlay').trim() || null;
   }
 
   function getNamedColors() {
