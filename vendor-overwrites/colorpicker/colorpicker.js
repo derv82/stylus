@@ -37,7 +37,7 @@
              */
             format : function (obj, type) {
                 const {r, g, b, h, s, l} = obj;
-                const a = getAlphaString(obj.a === undefined ? 1 : obj.a);
+                const a = getAlphaString(obj.a);
                 const hasA = !!a;
                 switch (type) {
                     case 'hex': {
@@ -256,6 +256,7 @@
         var hideDelay = 2000;
 
         var prevFocusedElement;
+        var lastOutputColor;
 
         function dom(tag, className, attr) {
 
@@ -464,14 +465,14 @@
             $rgb_r.val(r);
             $rgb_g.val(g);
             $rgb_b.val(b);
-            $rgb_a.val(getAlphaString());
+            $rgb_a.val(getAlphaString() || 1);
         }
 
         function setHSLInput(h, s, l) {
             $hsl_h.val(h);
             $hsl_s.val(s);
             $hsl_l.val(l);
-            $hsl_a.val(getAlphaString());
+            $hsl_a.val(getAlphaString() || 1);
         }
 
         function getHexFormat() {
@@ -496,7 +497,7 @@
             return color.RGBtoHSL(rgb.r, rgb.g, rgb.b);
         }
 
-        function getFormattedColor (format = 'hex') {
+        function getFormattedColor (format = $information.data('format')) {
             const converted = format === 'hsl' ? convertHSL() : convertRGB();
             converted.a = currentA == 1 ? undefined : currentA;
             return color.format(converted, format);
@@ -727,12 +728,42 @@
             return e;
         }
 
+        function parseAsNumber(el, parser) {
+            const num = parser(el.value);
+            if (!isNaN(num)) {
+                el.value = num;
+                return true;
+            }
+        }
+
+        function validateInput(el) {
+            const isAlpha = el.matches('.rgb-a input, .hsl-a input');
+            let isValid = (isAlpha || el.value.trim()) && el.checkValidity();
+            if (!isAlpha && !isValid && el.matches('.rgb input')) {
+                isValid = parseAsNumber(el, parseInt);
+            } else if (isAlpha && !isValid) {
+                isValid = parseAsNumber(el, parseFloat);
+            }
+            if (isAlpha && isValid) {
+                const currentAcopy = currentA;
+                currentA = parseFloat(el.value);
+                currentA = isNaN(currentA) ? 1 : currentA;
+                isValid = getFormattedColor() !== lastOutputColor;
+                currentA = currentAcopy;
+            }
+            return isValid;
+        }
+
+        function getVisibleColorInputs(format = $information.data('format')) {
+            return Array.prototype.slice.call(
+                $information.el.querySelectorAll(`.information-item.${format} input`)
+            );
+        }
+
         function updateColorFromInput(e) {
             const format = $information.data('format');
-            const inputs = [...$information.el.querySelectorAll(`.information-item.${format} input`)];
-            if (!inputs.every(el =>
-                    (el.value.trim() || el.matches('.rgb-a input, .hsl-a input')) &&
-                    el.checkValidity())) {
+            const inputs = getVisibleColorInputs(format);
+            if (!inputs.every(validateInput)) {
                 return;
             }
             let colorObj, hex, r, g, b, h, s, l, a;
@@ -819,7 +850,7 @@
             if (!e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
                 switch (e.which) {
                     case 13:
-                        colorpickerCallback(getFormattedColor($information.data('format')));
+                        colorpickerCallback(getFormattedColor());
                         // fall through to 27
                     case 27:
                         e.preventDefault();
@@ -1184,6 +1215,7 @@
 
         function show (opt, color,  callback) {
             prevFocusedElement = document.activeElement;
+            lastOutputColor = color;
             destroy();
             initEvent();
             $root.appendTo(document.body);
@@ -1206,7 +1238,10 @@
 
             // define colorpicker callback
             colorpickerCallback = function (colorString) {
-                callback(colorString.replace(/\b0\./g, '.'));
+                if (getVisibleColorInputs().every(el => el.checkValidity())) {
+                    lastOutputColor = colorString.replace(/\b0\./g, '.');
+                    callback(lastOutputColor);
+                }
             }
 
             // define hide delay
@@ -1229,6 +1264,9 @@
             });
 
             addEvent($root.el, 'mouseleave', function () {
+                if ($root.el.contains(document.activeElement)) {
+                    return;
+                }
                 clearTimeout(timerCloseColorPicker);
                 timerCloseColorPicker = setTimeout(hide, delayTime);
             });
