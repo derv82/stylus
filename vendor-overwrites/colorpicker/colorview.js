@@ -45,6 +45,7 @@
     mousedown(cm, event) {
       const self = cm.state.colorpicker;
       if (event.target.classList.contains(COLORPICKER_BACKGROUND_CLASS)) {
+        event.preventDefault();
         self.openPopupForMarker(event.target.parentNode);
       } else {
         self.closePopup();

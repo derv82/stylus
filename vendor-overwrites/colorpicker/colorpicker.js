@@ -745,7 +745,15 @@
                 isValid = parseAsNumber(el, parseFloat);
             }
             if (isAlpha && isValid) {
-                isValid = getFormattedColor(undefined, parseFloat(el.value)) !== lastOutputColor;
+                isValid = lastOutputColor !== color.format({
+                    r: $rgb_r.int(),
+                    g: $rgb_g.int(),
+                    b: $rgb_b.int(),
+                    h: parseFloat($hsl_h),
+                    s: parseFloat($hsl_s),
+                    l: parseFloat($hsl_l),
+                    a: parseFloat(el.value),
+                }, $information.data('format'));
             }
             return isValid;
         }
@@ -831,7 +839,6 @@
             setCurrentHSV(hsv.h, hsv.s, hsv.v, colorObj.a);
             setColorUI();
             setHueColor();
-            setInputColor();
         }
 
         function addEvent (dom, eventName, callback) {
@@ -1002,7 +1009,7 @@
             if (type == 'hex') {
                 var field = new dom('div', 'input-field hex');
 
-                $hexCode = new dom('input', 'input', { type: 'text',
+                $hexCode = new dom('input', 'input', { type: 'text', spellcheck: false,
                     pattern: /^\s*#([a-fA-F\d]{3}([a-fA-F\d]([a-fA-F\d]{2}([a-fA-F\d]{2})?)?)?)\s*$/.source });
 
                 field.append($hexCode);
@@ -1037,7 +1044,7 @@
 
                 // rgba
                 field = new dom('div', 'input-field rgb-a');
-                $rgb_a = new dom('input', 'input', { type: 'text', pattern: alphaPattern });
+                $rgb_a = new dom('input', 'input', { type: 'text', pattern: alphaPattern, spellcheck: false });
 
                 field.append($rgb_a);
                 field.append(new dom('div', 'title').setText('A'));
@@ -1071,7 +1078,7 @@
 
                 // rgba
                 field = new dom('div', 'input-field hsl-a');
-                $hsl_a = new dom('input', 'input', { type: 'text', pattern: alphaPattern });
+                $hsl_a = new dom('input', 'input', { type: 'text', pattern: alphaPattern, spellcheck: false });
 
                 field.append($hsl_a);
                 field.append(new dom('div', 'title').setText('A'));
@@ -1232,6 +1239,7 @@
             $formatChangeButton.el.title = opt.tooltipForSwitcher || '';
 
             initColor(color);
+            getVisibleColorInputs().pop().focus();
 
             // define colorpicker callback
             colorpickerCallback = function (colorString) {
