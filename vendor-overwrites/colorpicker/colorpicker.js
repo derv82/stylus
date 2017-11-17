@@ -454,7 +454,7 @@
         }
 
         function getAlphaString(a = currentA) {
-            return a === undefined ? '' :
+            return isNaN(a) ? '' :
                 a.toString().slice(0, 8)
                     .replace(/(\.[^0]*)0+$/, '$1')
                     .replace(/^1$/, '');
