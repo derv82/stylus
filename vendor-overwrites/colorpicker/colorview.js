@@ -10,33 +10,49 @@
     mod(window.CodeMirror);
   }
 })(function (CodeMirror) {
-  const COLORPICKER_CLASS = 'codemirror-colorview';
-  const COLORPICKER_BACKGROUND_CLASS = 'codemirror-colorview-background';
-  const NAMED_COLORS = getNamedColors();
-  const COLOR_REGEXP = new RegExp([
-    /#(?:[a-f\d]{3,4}|[a-f\d]{6}|[a-f\d]{8})\b/,
-    /\brgb\((?:\s*\d{1,3},\s*){2}\d{1,3}\s*\)/,
-    /\brgba\((?:\s*\d{1,3},\s*){3}\d*\.?\d+\s*\)/,
-    /\bhsl\(\s*(?:-?\d+|-?\d*\.\d+)\s*(?:,\s*(?:-?\d+|-?\d*\.\d+)%\s*){2}\)/,
-    /\bhsla\(\s*(?:-?\d+|-?\d*\.\d+)\s*(?:,\s*(?:-?\d+|-?\d*\.\d+)%\s*){2},\s*(?:-?\d+|-?\d*\.\d+)\s*\)/,
-    /(?:^|[^-\w.`~@#$%^&*+_;/\\?<>|])/.source +
-      '(' + Object.keys(NAMED_COLORS).join('|') + ')' +
-      /(?:[^-\w.`~@#$%^&*+_/\\?<>|]|$)/.source,
-  ].map(rx => rx.source || rx).join('|'), 'gi');
+  const TOKEN_NAME = 'colorview';
+  const TOKEN_DOM_CLASS = 'cm-' + TOKEN_NAME;
+  const TOKEN_HOOKED_NAME = Object.assign({}, ...[
+    'atom',
+    'keyword',
+  ].map(s => ({[s]: s + ' ' + TOKEN_NAME})));
+  const BACKGROUND_CLASS = 'codemirror-colorview-background';
+
+  const NAMED_COLORS = getNamedColorsMap();
+  const RX_COLOR = {
+    hex: /#(?:[a-f\d]{3,4}|[a-f\d]{6}|[a-f\d]{8})\b/yi,
+    rgb: /rgb\((?:\s*\d{1,3},\s*){2}\d{1,3}\s*\)/yi,
+    rgba: /rgba\((?:\s*\d{1,3},\s*){3}\d*\.?\d+\s*\)/yi,
+    hsl: /hsl\(\s*(?:-?\d+|-?\d*\.\d+)\s*(?:,\s*(?:-?\d+|-?\d*\.\d+)%\s*){2}\)/yi,
+    hsla: /hsla\(\s*(?:-?\d+|-?\d*\.\d+)\s*(?:,\s*(?:-?\d+|-?\d*\.\d+)%\s*){2},\s*(?:-?\d+|-?\d*\.\d+)\s*\)/yi,
+    named: new RegExp([...NAMED_COLORS.keys()].join('|'), 'i'),
+  };
+  RX_COLOR.combined = new RegExp(
+    /(^|[\s,:"'(])/.source +
+    '(' + Object.keys(RX_COLOR).map(k => RX_COLOR[k].source).join('|') + ')' +
+    /(?:$|[\s,;"')}])/.source,
+    'gi');
 
   const CM_EVENTS = {
-    change(cm, event) {
-      const self = cm.state.colorpicker;
-      if (event.origin === 'setValue') {
-        self.closePopup();
-        self.updateAll();
-      } else {
-        self.updateLineRange(event.from.line, CodeMirror.changeEnd(event).line);
+    change(cm, {from, to, removed}) {
+      const cache = cm.state.colorpicker.cache;
+      if (removed.length === 1 && from.ch === 0 && to.ch > 0) {
+        console.log('deleted', cache.delete(removed[0]));
+        //cache.delete(removed[0]);
+      } else if (removed.length > 1) {
+        for (const [text, lineCache] of cache.entries()) {
+          const line = lineCache.size && lineCache.values().next().value.line;
+          if (line === undefined || line >= from.line && line <= to.line) {
+            console.log('deleted', line);
+            cache.delete(text);
+          }
+        }
       }
     },
     update(cm) {
-      cm.off('update', CM_EVENTS.update);
-      CM_EVENTS.change(cm, {origin: 'setValue'});
+      if (cm.state.colorpicker.cache.size) {
+        renderMarkers(cm);
+      }
     },
     keyup(cm) {
       const popup = cm.state.colorpicker.popup;
@@ -46,17 +62,12 @@
     },
     mousedown(cm, event) {
       const self = cm.state.colorpicker;
-      if (event.target.classList.contains(COLORPICKER_BACKGROUND_CLASS)) {
+      if (event.target.classList.contains(BACKGROUND_CLASS)) {
         event.preventDefault();
         self.openPopupForMarker(event.target.parentNode);
       } else {
         self.closePopup();
       }
-    },
-    scroll(cm) {
-      const self = cm.state.colorpicker;
-      clearTimeout(self.onScrollTimer);
-      self.onScrollTimer = setTimeout(self.closePopup, 50);
     },
   };
 
@@ -70,6 +81,7 @@
       this.cm = cm;
       this.opt = {tooltip, tooltipForSwitcher, hideDelay};
       this.popup = cm.colorpicker ? cm.colorpicker() : colorpicker;
+      this.cache = new Map();
       this.registerEvents();
     }
 
@@ -79,70 +91,6 @@
 
     unregisterEvents() {
       Object.keys(CM_EVENTS).forEach(name => this.cm.off(name, CM_EVENTS[name]));
-    }
-
-    updateAll() {
-      const data = {self: this};
-      // updateVisible modifies data
-      this.cm.operation(() => updateVisible(data));
-      setTimeout(updateInvisible, 100, data);
-    }
-
-    updateLineRange(line1, line2) {
-      if (line1 > line2) {
-        return;
-      }
-      this.cm.startOperation();
-      const data = {};
-      let line = line1;
-      this.cm.doc.iter(line1, line2 + 1, lineHandle => {
-        this.updateLine(line++, lineHandle, data);
-      });
-      this.cm.endOperation();
-    }
-
-    updateLine(
-      line,
-      lineHandle = this.cm.getLineHandle(line),
-      data = {}
-    ) {
-      for (const {marker} of lineHandle.markedSpans || []) {
-        if ((marker.replacedWith || {}).colorpickerData) {
-          marker.clear();
-        }
-      }
-
-      if (data.inComment === undefined) {
-        data.inComment = this.cm.getTokenAt({line, ch: 0}).type === 'comment';
-      }
-
-      let tokenData;
-
-      for (const [ch, str, actualColor = str] of findColors(lineHandle.text, data)) {
-        const maybeHex = str.startsWith('#');
-        if (maybeHex && isNaN(parseInt(str.charAt(1))) || !maybeHex && !str.includes('(')) {
-          tokenData = tokenData || {line, lineHandle, cm: this.cm, index: 0};
-          switch (getTokenType(tokenData, ch + 1)) {
-            case 'builtin':
-            case 'tag':
-              continue;
-          }
-        }
-        this.cm.setBookmark({line, ch}, {
-          widget: createMarker(line, ch, str, actualColor, this.opt.tooltip),
-          handleMouseEvents: true,
-        });
-      }
-    }
-
-    removeAllMarkers() {
-      this.cm.operation(() => {
-        for (const marker of this.cm.getAllMarks()) {
-          if ((marker.replacedWith || {}).colorpickerData) {
-            marker.clear();
-          }
-        }
-      });
     }
 
     openPopup(defaultColor = '#FFFFFF') {
@@ -155,33 +103,33 @@
       };
       for (const {from, marker} of this.cm.getLineHandle(cursor.line).markedSpans || []) {
         if (from <= data.ch && (marker.replacedWith || {}).colorpickerData) {
-          const {color, actualColor} = marker.replacedWith.colorpickerData;
+          const {color, colorValue} = marker.replacedWith.colorpickerData;
           if (data.ch <= from + color.length) {
             data.ch = from;
             data.color = color;
-            data.actualColor = actualColor;
+            data.colorValue = colorValue;
             break;
           }
         }
       }
-      this.openPopupForMarker({colorPickerData: data});
+      this.openPopupForMarker({colorpickerData: data});
     }
 
     openPopupForMarker(el) {
       if (!this.popup) {
         return;
       }
-      const {line, ch, color, actualColor} = el.colorpickerData;
+      const {line, ch, color, colorValue = color} = el.colorpickerData;
       const pos = {line, ch};
       const coords = this.cm.charCoords(pos);
       let prevColor = color;
       this.popup.show({
         left: coords.left,
         top: coords.bottom,
-        isShortCut: el.isShortCut || false,
+        isShortCut: false,
         hideDelay: this.opt.hideDelay,
         tooltipForSwitcher: this.opt.tooltipForSwitcher,
-      }, actualColor, newColor => {
+      }, colorValue, newColor => {
         this.cm.replaceRange(newColor, pos, {line, ch: ch + prevColor.length}, '*colorpicker');
         prevColor = newColor;
       });
@@ -194,287 +142,286 @@
     }
   }
 
-  function updateVisible(data) {
-    const cm = data.self.cm;
-    const t0 = performance.now();
-    data.top = cm.display.viewFrom;
-    data.bottom = cm.doc.size - 1;
-    let line = data.top;
-    cm.doc.iter(data.top, data.bottom + 1, lineHandle => {
-      data.self.updateLine(line++, lineHandle, data);
-      if (performance.now() - t0 > 10) {
-        data.bottom = line - 1;
-        return true;
-      }
-    });
+  function getNamedColorsMap() {
+    return new Map([
+      ['aliceblue', '#f0f8ff'],
+      ['antiquewhite', '#faebd7'],
+      ['aqua', '#00ffff'],
+      ['aquamarine', '#7fffd4'],
+      ['azure', '#f0ffff'],
+      ['beige', '#f5f5dc'],
+      ['bisque', '#ffe4c4'],
+      ['black', '#000000'],
+      ['blanchedalmond', '#ffebcd'],
+      ['blue', '#0000ff'],
+      ['blueviolet', '#8a2be2'],
+      ['brown', '#a52a2a'],
+      ['burlywood', '#deb887'],
+      ['cadetblue', '#5f9ea0'],
+      ['chartreuse', '#7fff00'],
+      ['chocolate', '#d2691e'],
+      ['coral', '#ff7f50'],
+      ['cornflowerblue', '#6495ed'],
+      ['cornsilk', '#fff8dc'],
+      ['crimson', '#dc143c'],
+      ['cyan', '#00ffff'],
+      ['darkblue', '#00008b'],
+      ['darkcyan', '#008b8b'],
+      ['darkgoldenrod', '#b8860b'],
+      ['darkgray', '#a9a9a9'],
+      ['darkgreen', '#006400'],
+      ['darkgrey', '#a9a9a9'],
+      ['darkkhaki', '#bdb76b'],
+      ['darkmagenta', '#8b008b'],
+      ['darkolivegreen', '#556b2f'],
+      ['darkorange', '#ff8c00'],
+      ['darkorchid', '#9932cc'],
+      ['darkred', '#8b0000'],
+      ['darksalmon', '#e9967a'],
+      ['darkseagreen', '#8fbc8f'],
+      ['darkslateblue', '#483d8b'],
+      ['darkslategray', '#2f4f4f'],
+      ['darkslategrey', '#2f4f4f'],
+      ['darkturquoise', '#00ced1'],
+      ['darkviolet', '#9400d3'],
+      ['deeppink', '#ff1493'],
+      ['deepskyblue', '#00bfff'],
+      ['dimgray', '#696969'],
+      ['dimgrey', '#696969'],
+      ['dodgerblue', '#1e90ff'],
+      ['firebrick', '#b22222'],
+      ['floralwhite', '#fffaf0'],
+      ['forestgreen', '#228b22'],
+      ['fuchsia', '#ff00ff'],
+      ['gainsboro', '#dcdcdc'],
+      ['ghostwhite', '#f8f8ff'],
+      ['gold', '#ffd700'],
+      ['goldenrod', '#daa520'],
+      ['gray', '#808080'],
+      ['green', '#008000'],
+      ['greenyellow', '#adff2f'],
+      ['grey', '#808080'],
+      ['honeydew', '#f0fff0'],
+      ['hotpink', '#ff69b4'],
+      ['indianred', '#cd5c5c'],
+      ['indigo', '#4b0082'],
+      ['ivory', '#fffff0'],
+      ['khaki', '#f0e68c'],
+      ['lavender', '#e6e6fa'],
+      ['lavenderblush', '#fff0f5'],
+      ['lawngreen', '#7cfc00'],
+      ['lemonchiffon', '#fffacd'],
+      ['lightblue', '#add8e6'],
+      ['lightcoral', '#f08080'],
+      ['lightcyan', '#e0ffff'],
+      ['lightgoldenrodyellow', '#fafad2'],
+      ['lightgray', '#d3d3d3'],
+      ['lightgreen', '#90ee90'],
+      ['lightgrey', '#d3d3d3'],
+      ['lightpink', '#ffb6c1'],
+      ['lightsalmon', '#ffa07a'],
+      ['lightseagreen', '#20b2aa'],
+      ['lightskyblue', '#87cefa'],
+      ['lightslategray', '#778899'],
+      ['lightslategrey', '#778899'],
+      ['lightsteelblue', '#b0c4de'],
+      ['lightyellow', '#ffffe0'],
+      ['lime', '#00ff00'],
+      ['limegreen', '#32cd32'],
+      ['linen', '#faf0e6'],
+      ['magenta', '#ff00ff'],
+      ['maroon', '#800000'],
+      ['mediumaquamarine', '#66cdaa'],
+      ['mediumblue', '#0000cd'],
+      ['mediumorchid', '#ba55d3'],
+      ['mediumpurple', '#9370db'],
+      ['mediumseagreen', '#3cb371'],
+      ['mediumslateblue', '#7b68ee'],
+      ['mediumspringgreen', '#00fa9a'],
+      ['mediumturquoise', '#48d1cc'],
+      ['mediumvioletred', '#c71585'],
+      ['midnightblue', '#191970'],
+      ['mintcream', '#f5fffa'],
+      ['mistyrose', '#ffe4e1'],
+      ['moccasin', '#ffe4b5'],
+      ['navajowhite', '#ffdead'],
+      ['navy', '#000080'],
+      ['oldlace', '#fdf5e6'],
+      ['olive', '#808000'],
+      ['olivedrab', '#6b8e23'],
+      ['orange', '#ffa500'],
+      ['orangered', '#ff4500'],
+      ['orchid', '#da70d6'],
+      ['palegoldenrod', '#eee8aa'],
+      ['palegreen', '#98fb98'],
+      ['paleturquoise', '#afeeee'],
+      ['palevioletred', '#db7093'],
+      ['papayawhip', '#ffefd5'],
+      ['peachpuff', '#ffdab9'],
+      ['peru', '#cd853f'],
+      ['pink', '#ffc0cb'],
+      ['plum', '#dda0dd'],
+      ['powderblue', '#b0e0e6'],
+      ['purple', '#800080'],
+      ['rebeccapurple', '#663399'],
+      ['red', '#ff0000'],
+      ['rosybrown', '#bc8f8f'],
+      ['royalblue', '#4169e1'],
+      ['saddlebrown', '#8b4513'],
+      ['salmon', '#fa8072'],
+      ['sandybrown', '#f4a460'],
+      ['seagreen', '#2e8b57'],
+      ['seashell', '#fff5ee'],
+      ['sienna', '#a0522d'],
+      ['silver', '#c0c0c0'],
+      ['skyblue', '#87ceeb'],
+      ['slateblue', '#6a5acd'],
+      ['slategray', '#708090'],
+      ['slategrey', '#708090'],
+      ['snow', '#fffafa'],
+      ['springgreen', '#00ff7f'],
+      ['steelblue', '#4682b4'],
+      ['tan', '#d2b48c'],
+      ['teal', '#008080'],
+      ['thistle', '#d8bfd8'],
+      ['tomato', '#ff6347'],
+      ['turquoise', '#40e0d0'],
+      ['violet', '#ee82ee'],
+      ['wheat', '#f5deb3'],
+      ['white', '#ffffff'],
+      ['whitesmoke', '#f5f5f5'],
+      ['yellow', '#ffff00'],
+      ['yellowgreen', '#9acd32'],
+    ]);
   }
 
-  function updateInvisible({self, top, bottom}) {
-    self.updateLineRange(0, top - 1);
-    self.updateLineRange(bottom + 1, self.cm.doc.size);
+  function modeHookStart() {
+    const state = this._startState.apply(this, arguments);
+    state.colorpicker = {};
+    return state;
   }
 
-  function createMarker(line, ch, color, actualColor, title) {
-    const marker = document.createElement('div');
-    const colorpickerData = {
-      line,
-      ch,
-      color,
-      actualColor,
-      backElement: marker.appendChild(
-        Object.assign(document.createElement('div'), {
-          className: COLORPICKER_BACKGROUND_CLASS,
-          style: `background-color: ${actualColor} !important`,
-        })
-      ),
-    };
-    Object.assign(marker, {
-      title,
-      colorpickerData,
-      className: COLORPICKER_CLASS,
-    });
-    return marker;
-  }
-
-  function findColors(text, data) {
-    const colors = [];
-    let start = data.inComment ? text.indexOf('*/') + 2 : 0;
-    if (start === 1) {
-      return [];
+  function modeHookToken(stream, {colorpicker}) {
+    const token = this._token.apply(this, arguments);
+    const cm = stream.lineOracle.doc.cm;
+    const display = cm.display;
+    const oldView = !display.viewFrom && !display.viewTo;
+    const top = oldView ? display.reportedViewFrom : display.viewFrom;
+    const bottom = oldView ? display.reportedViewTo : display.viewTo;
+    const line = stream.lineOracle.line;
+    if ((top || bottom) && (line < top || line > bottom) && line !== cm.getCursor().line) {
+      return token;
     }
-    let end;
-    do {
-      end = text.indexOf('/*', start);
-      end = end < 0 ? text.length : end;
-      if (start < end) {
-        const chunk = text.substring(start, end);
-        for (let m; (m = COLOR_REGEXP.exec(chunk));) {
-          const str = m[0];
-          let ch = m.index + start;
-          if (str.startsWith('#') || str.startsWith('rgb') || str.startsWith('hsl')) {
-            colors.push([ch, str]);
-          } else {
-            const name = str.replace(/^[^-\w]|[^-\w]$/g, '');
-            const actualColor = NAMED_COLORS[name.toLowerCase()];
-            if (!actualColor) {
-              continue;
-            }
-            ch += str.startsWith(name) ? 0 : 1;
-            colors.push([ch, name, actualColor]);
-          }
+    const text = stream.string;
+    const {cache} = cm.state.colorpicker;
+    let lineCache = text === colorpicker.lastText ? colorpicker.lineCache : cache.get(text);
+    const data = lineCache && lineCache.get(stream.pos);
+    if (data) {
+      return TOKEN_HOOKED_NAME[token];
+    }
+    let color, colorValue;
+    switch (token) {
+      case 'atom': {
+        const s = stream.current().toLowerCase();
+        const maybeHex = s.startsWith('#');
+        if (maybeHex ||
+            (s === 'rgb' || s === 'rgba' || s === 'hsl' || s === 'hsla') &&
+              text.charAt(stream.pos) === '(') {
+          const rx = maybeHex ? RX_COLOR.hex : RX_COLOR[s];
+          rx.lastIndex = stream.start;
+          const match = rx.exec(text);
+          color = match && {color: match[0]};
         }
-      }
-      if (end === text.length) {
-        data.inComment = false;
         break;
       }
-      start = text.indexOf('*/', end);
-      data.inComment = start < 0;
-      start += 2;
-    } while (!data.inComment);
-    return colors;
-  }
-
-  function getTokenType(data, ch) {
-    if (data.lineHandle.styles) {
-      return getTokenTypeFromStyles(data, ch);
-    }
-    const tokens = data.tokens = data.tokens || data.cm.getLineTokens(data.line);
-    while (data.index < tokens.length) {
-      const token = tokens[data.index];
-      if (token.start <= ch && ch <= token.end) {
-        return token.type;
-      }
-      data.index += 2;
-    }
-    return null;
-  }
-
-  function getTokenTypeFromStyles(data, ch) {
-    // styles array: [modeGen, endCh1, style1, endCh2, style2, ...]
-    const styles = data.lineHandle.styles;
-    let index = data.index || 1;
-    let type;
-    while (index < styles.length) {
-      if (styles[index] > ch) {
-        type = index > 1 && styles[index + 1];
+      case 'keyword': {
+        color = stream.current();
+        colorValue = NAMED_COLORS.get(color.toLowerCase());
+        color = colorValue && {color, colorValue};
         break;
       }
-      index += 2;
     }
-    data.index = index;
-    return type && type.replace('overlay').trim() || null;
+    if (!color) {
+      return token;
+    }
+    if (!lineCache) {
+      lineCache = new Map();
+      cache.set(text, lineCache);
+    }
+    lineCache.set(stream.pos, color);
+    colorpicker.lastText = text;
+    colorpicker.lineCache = lineCache;
+    return TOKEN_HOOKED_NAME[token];
   }
 
-  function getNamedColors() {
-    return {
-      aliceblue: 'rgb(240, 248, 255)',
-      antiquewhite: 'rgb(250, 235, 215)',
-      aqua: 'rgb(0, 255, 255)',
-      aquamarine: 'rgb(127, 255, 212)',
-      azure: 'rgb(240, 255, 255)',
-      beige: 'rgb(245, 245, 220)',
-      bisque: 'rgb(255, 228, 196)',
-      black: 'rgb(0, 0, 0)',
-      blanchedalmond: 'rgb(255, 235, 205)',
-      blue: 'rgb(0, 0, 255)',
-      blueviolet: 'rgb(138, 43, 226)',
-      brown: 'rgb(165, 42, 42)',
-      burlywood: 'rgb(222, 184, 135)',
-      cadetblue: 'rgb(95, 158, 160)',
-      chartreuse: 'rgb(127, 255, 0)',
-      chocolate: 'rgb(210, 105, 30)',
-      coral: 'rgb(255, 127, 80)',
-      cornflowerblue: 'rgb(100, 149, 237)',
-      cornsilk: 'rgb(255, 248, 220)',
-      crimson: 'rgb(237, 20, 61)',
-      cyan: 'rgb(0, 255, 255)',
-      darkblue: 'rgb(0, 0, 139)',
-      darkcyan: 'rgb(0, 139, 139)',
-      darkgoldenrod: 'rgb(184, 134, 11)',
-      darkgray: 'rgb(169, 169, 169)',
-      darkgrey: 'rgb(169, 169, 169)',
-      darkgreen: 'rgb(0, 100, 0)',
-      darkkhaki: 'rgb(189, 183, 107)',
-      darkmagenta: 'rgb(139, 0, 139)',
-      darkolivegreen: 'rgb(85, 107, 47)',
-      darkorange: 'rgb(255, 140, 0)',
-      darkorchid: 'rgb(153, 50, 204)',
-      darkred: 'rgb(139, 0, 0)',
-      darksalmon: 'rgb(233, 150, 122)',
-      darkseagreen: 'rgb(143, 188, 143)',
-      darkslateblue: 'rgb(72, 61, 139)',
-      darkslategray: 'rgb(47, 79, 79)',
-      darkslategrey: 'rgb(47, 79, 79)',
-      darkturquoise: 'rgb(0, 206, 209)',
-      darkviolet: 'rgb(148, 0, 211)',
-      deeppink: 'rgb(255, 20, 147)',
-      deepskyblue: 'rgb(0, 191, 255)',
-      dimgray: 'rgb(105, 105, 105)',
-      dimgrey: 'rgb(105, 105, 105)',
-      dodgerblue: 'rgb(30, 144, 255)',
-      firebrick: 'rgb(178, 34, 34)',
-      floralwhite: 'rgb(255, 250, 240)',
-      forestgreen: 'rgb(34, 139, 34)',
-      fuchsia: 'rgb(255, 0, 255)',
-      gainsboro: 'rgb(220, 220, 220)',
-      ghostwhite: 'rgb(248, 248, 255)',
-      gold: 'rgb(255, 215, 0)',
-      goldenrod: 'rgb(218, 165, 32)',
-      gray: 'rgb(128, 128, 128)',
-      grey: 'rgb(128, 128, 128)',
-      green: 'rgb(0, 128, 0)',
-      greenyellow: 'rgb(173, 255, 47)',
-      honeydew: 'rgb(240, 255, 240)',
-      hotpink: 'rgb(255, 105, 180)',
-      indianred: 'rgb(205, 92, 92)',
-      indigo: 'rgb(75, 0, 130)',
-      ivory: 'rgb(255, 255, 240)',
-      khaki: 'rgb(240, 230, 140)',
-      lavender: 'rgb(230, 230, 250)',
-      lavenderblush: 'rgb(255, 240, 245)',
-      lawngreen: 'rgb(124, 252, 0)',
-      lemonchiffon: 'rgb(255, 250, 205)',
-      lightblue: 'rgb(173, 216, 230)',
-      lightcoral: 'rgb(240, 128, 128)',
-      lightcyan: 'rgb(224, 255, 255)',
-      lightgoldenrodyellow: 'rgb(250, 250, 210)',
-      lightgreen: 'rgb(144, 238, 144)',
-      lightgray: 'rgb(211, 211, 211)',
-      lightgrey: 'rgb(211, 211, 211)',
-      lightpink: 'rgb(255, 182, 193)',
-      lightsalmon: 'rgb(255, 160, 122)',
-      lightseagreen: 'rgb(32, 178, 170)',
-      lightskyblue: 'rgb(135, 206, 250)',
-      lightslategray: 'rgb(119, 136, 153)',
-      lightslategrey: 'rgb(119, 136, 153)',
-      lightsteelblue: 'rgb(176, 196, 222)',
-      lightyellow: 'rgb(255, 255, 224)',
-      lime: 'rgb(0, 255, 0)',
-      limegreen: 'rgb(50, 205, 50)',
-      linen: 'rgb(250, 240, 230)',
-      magenta: 'rgb(255, 0, 255)',
-      maroon: 'rgb(128, 0, 0)',
-      mediumaquamarine: 'rgb(102, 205, 170)',
-      mediumblue: 'rgb(0, 0, 205)',
-      mediumorchid: 'rgb(186, 85, 211)',
-      mediumpurple: 'rgb(147, 112, 219)',
-      mediumseagreen: 'rgb(60, 179, 113)',
-      mediumslateblue: 'rgb(123, 104, 238)',
-      mediumspringgreen: 'rgb(0, 250, 154)',
-      mediumturquoise: 'rgb(72, 209, 204)',
-      mediumvioletred: 'rgb(199, 21, 133)',
-      midnightblue: 'rgb(25, 25, 112)',
-      mintcream: 'rgb(245, 255, 250)',
-      mistyrose: 'rgb(255, 228, 225)',
-      moccasin: 'rgb(255, 228, 181)',
-      navajowhite: 'rgb(255, 222, 173)',
-      navy: 'rgb(0, 0, 128)',
-      oldlace: 'rgb(253, 245, 230)',
-      olive: 'rgb(128, 128, 0)',
-      olivedrab: 'rgb(107, 142, 35)',
-      orange: 'rgb(255, 165, 0)',
-      orangered: 'rgb(255, 69, 0)',
-      orchid: 'rgb(218, 112, 214)',
-      palegoldenrod: 'rgb(238, 232, 170)',
-      palegreen: 'rgb(152, 251, 152)',
-      paleturquoise: 'rgb(175, 238, 238)',
-      palevioletred: 'rgb(219, 112, 147)',
-      papayawhip: 'rgb(255, 239, 213)',
-      peachpuff: 'rgb(255, 218, 185)',
-      peru: 'rgb(205, 133, 63)',
-      pink: 'rgb(255, 192, 203)',
-      plum: 'rgb(221, 160, 221)',
-      powderblue: 'rgb(176, 224, 230)',
-      purple: 'rgb(128, 0, 128)',
-      rebeccapurple: 'rgb(102, 51, 153)',
-      red: 'rgb(255, 0, 0)',
-      rosybrown: 'rgb(188, 143, 143)',
-      royalblue: 'rgb(65, 105, 225)',
-      saddlebrown: 'rgb(139, 69, 19)',
-      salmon: 'rgb(250, 128, 114)',
-      sandybrown: 'rgb(244, 164, 96)',
-      seagreen: 'rgb(46, 139, 87)',
-      seashell: 'rgb(255, 245, 238)',
-      sienna: 'rgb(160, 82, 45)',
-      silver: 'rgb(192, 192, 192)',
-      skyblue: 'rgb(135, 206, 235)',
-      slateblue: 'rgb(106, 90, 205)',
-      slategray: 'rgb(112, 128, 144)',
-      slategrey: 'rgb(112, 128, 144)',
-      snow: 'rgb(255, 250, 250)',
-      springgreen: 'rgb(0, 255, 127)',
-      steelblue: 'rgb(70, 130, 180)',
-      tan: 'rgb(210, 180, 140)',
-      teal: 'rgb(0, 128, 128)',
-      thistle: 'rgb(216, 191, 216)',
-      tomato: 'rgb(255, 99, 71)',
-      turquoise: 'rgb(64, 224, 208)',
-      violet: 'rgb(238, 130, 238)',
-      wheat: 'rgb(245, 222, 179)',
-      white: 'rgb(255, 255, 255)',
-      whitesmoke: 'rgb(245, 245, 245)',
-      yellow: 'rgb(255, 255, 0)',
-      yellowgreen: 'rgb(154, 205, 50)',
-      transparent: 'rgba(0, 0, 0, 0)'
-    };
+  function renderMarkers(cm) {
+    const {cache} = cm.state.colorpicker;
+    let line = cm.display.viewFrom - 1;
+    for (const {line: lineHandle, text} of cm.display.renderedView) {
+      if (!lineHandle.parent) {
+        console.log('no lineHandle.parent');
+        continue;
+      }
+      line++;
+      const styles = lineHandle.styles;
+      if (!styles) {
+        continue;
+      }
+      const lineCache = cache.get(lineHandle.text);
+      if (!lineCache) {
+        continue;
+      }
+      let elementIndex = 0;
+      let elements;
+      for (let i = 1; i < styles.length; i += 2) {
+        const token = styles[i + 1];
+        if (!token || !token.includes(TOKEN_NAME)) {
+          continue;
+        }
+        const data = lineCache.get(styles[i]);
+        if (!data) {
+          continue;
+        }
+        elements = elements || text.getElementsByClassName(TOKEN_DOM_CLASS);
+        const el = elements[elementIndex++];
+        if (el.colorpickerData && el.colorpickerData.color === data.color) {
+          continue;
+        }
+        el.colorpickerData = data;
+        el.colorpickerData.ch = styles[i] - data.color.length;
+        el.colorpickerData.line = line;
+        let bg = el.firstElementChild;
+        if (!bg) {
+          bg = document.createElement('div');
+          bg.className = BACKGROUND_CLASS;
+          el.appendChild(bg);
+        }
+        bg.style.setProperty('background-color', data.color, 'important');
+      }
+    }
   }
 
   CodeMirror.defineOption('colorpicker', false, (cm, value, oldValue) => {
     // an existing instance is removed first
     // even if both value and oldValue are truthy
     if (oldValue && oldValue !== CodeMirror.Init) {
-      if (cm.state.colorpicker) {
-        cm.state.colorpicker.unregisterEvents();
-        cm.state.colorpicker.removeAllMarkers();
+      const self = cm.state.colorpicker;
+      if (self) {
+        self.unregisterEvents();
+        self.removeMarkers(cm);
         cm.state.colorpicker = null;
       }
     }
     if (value) {
-      const self = cm.state.colorpicker = new ColorMarker(cm, value);
+      cm.state.colorpicker = new ColorMarker(cm, value);
       if (value.forceUpdate) {
-        self.updateAll();
+        cm.refresh();
       }
     }
+  });
+
+  CodeMirror.extendMode('css', {
+    startState: modeHookStart,
+    token: modeHookToken,
   });
 });

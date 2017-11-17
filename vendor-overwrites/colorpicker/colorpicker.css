@@ -1,32 +1,38 @@
 
 /* codemirror colorview */
 
-.codemirror-colorview {
-	border : 1px solid #8e8e8e;
-    position: relative;
-	display : inline-block;
-	box-sizing : border-box;
-	margin : 0px 2px;
-	width : 10px;
-	height : 10px;
-	cursor: pointer;
-    background-image : url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAJElEQVQYV2NctWrVfwYkEBYWxojMZ6SDAmT7QGx0K1EcRBsFAADeG/3M/HteAAAAAElFTkSuQmCC");
-    background-repeat: repeat;
+.cm-colorview {
+  position: relative;
+  white-space: nowrap;
 }
 
-.codemirror-colorview .codemirror-colorview-background {
+.cm-colorview::before {
   content: "";
+  position: relative;
+  display: inline-block;
+  box-sizing: content-box;
+  margin: 0px 3px;
+  width: 8px;
+  height: 8px;
+  background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAJElEQVQYV2NctWrVfwYkEBYWxojMZ6SDAmT7QGx0K1EcRBsFAADeG/3M/HteAAAAAElFTkSuQmCC");
+  background-repeat: repeat;
+}
+
+.codemirror-colorview-background {
   position: absolute;
-  left:0px;
-  right:0px;
-  bottom:0px;
-  top:0px;
+  left: 2px;
+  top: 2px;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border: 1px solid #8e8e8e;
+  content: "";
+  cursor: pointer;
 }
 
-.codemirror-colorview:hover {
-	border-color: #494949;
+.codemirror-colorview-background:hover {
+  border-color: #494949;
 }
-
 
 /* codemirror-colorpicker */
 
