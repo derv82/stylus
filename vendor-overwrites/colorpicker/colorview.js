@@ -29,11 +29,11 @@
   };
 
   const CodeMirrorEvents = {
-    change(cm, {from, to, removed}) {
+    change(cm, {from, to, text, removed}) {
       const cache = cm.state.colorpicker.cache;
       if (removed.length === 1 && from.ch === 0 && to.ch > 0) {
         cache.delete(removed[0]);
-      } else if (removed.length > 1) {
+      } else if (CodeMirror.cmpPos(from, to) || text.length > 1 || text[0]) {
         for (const [text, lineCache] of cache.entries()) {
           const line = lineCache.size && lineCache.values().next().value.line;
           if (line === undefined || line >= from.line && line <= to.line) {
@@ -55,11 +55,10 @@
     },
     mousedown(cm, event) {
       const self = cm.state.colorpicker;
-      if (event.target.classList.contains(OWN_BACKGROUND_CLASS)) {
+      self.closePopup();
+      if (event.button === 0 && event.target.classList.contains(OWN_BACKGROUND_CLASS)) {
         event.preventDefault();
-        self.openPopupForMarker(event.target.parentNode);
-      } else {
-        self.closePopup();
+        self.openPopupForToken(event.target.parentNode);
       }
     },
   };
@@ -106,7 +105,7 @@
     data.lastString = string;
 
     let lineCache = data.lineCache = (sameString ? data.lineCache : cache.get(string));
-    if (lineCache && lineCache.get(stream.pos)) {
+    if (lineCache && lineCache.get(stream.start)) {
       return hookedToken.override;
     }
 
@@ -116,7 +115,7 @@
         lineCache = data.lineCache = new Map();
         cache.set(string, lineCache);
       }
-      lineCache.set(stream.pos, color);
+      lineCache.set(stream.start, color);
       return hookedToken.override;
     }
 
@@ -167,7 +166,8 @@
         if (!token || !token.includes(OWN_TOKEN_NAME)) {
           continue;
         }
-        const data = lineCache.get(styles[i]);
+        const start = styles[i - 2] || 0;
+        const data = lineCache.get(start);
         if (!data) {
           continue;
         }
@@ -176,8 +176,7 @@
         if (el.colorpickerData && el.colorpickerData.color === data.color) {
           continue;
         }
-        const ch = styles[i] - data.color.length;
-        el.colorpickerData = Object.assign({line, ch}, data);
+        el.colorpickerData = Object.assign({line, ch: start}, data);
         let bg = el.firstElementChild;
         if (!bg) {
           bg = document.createElement('div');
@@ -387,16 +386,16 @@
           }
         }
       }
-      this.openPopupForMarker({colorpickerData: data});
+      this.openPopupForToken({colorpickerData: data});
     }
 
-    openPopupForMarker(el) {
+    openPopupForToken(el) {
       if (!this.popup) {
         return;
       }
       const {line, ch, color, colorValue = color} = el.colorpickerData;
-      const pos = {line, ch};
-      const coords = this.cm.charCoords(pos);
+      const from = {line, ch};
+      const coords = this.cm.charCoords(from);
       let prevColor = color;
       this.popup.show({
         left: coords.left,
@@ -405,7 +404,10 @@
         hideDelay: this.opt.hideDelay,
         tooltipForSwitcher: this.opt.tooltipForSwitcher,
       }, colorValue, newColor => {
-        this.cm.replaceRange(newColor, pos, {line, ch: ch + prevColor.length}, '*colorpicker');
+        const to = {line, ch: ch + prevColor.length};
+        if (this.cm.getRange(from, to) !== newColor) {
+          this.cm.replaceRange(newColor, from, to, '*colorpicker');
+        }
         prevColor = newColor;
       });
     }
