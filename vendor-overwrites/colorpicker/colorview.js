@@ -37,13 +37,11 @@
     change(cm, {from, to, removed}) {
       const cache = cm.state.colorpicker.cache;
       if (removed.length === 1 && from.ch === 0 && to.ch > 0) {
-        console.log('deleted', cache.delete(removed[0]));
-        //cache.delete(removed[0]);
+        cache.delete(removed[0]);
       } else if (removed.length > 1) {
         for (const [text, lineCache] of cache.entries()) {
           const line = lineCache.size && lineCache.values().next().value.line;
           if (line === undefined || line >= from.line && line <= to.line) {
-            console.log('deleted', line);
             cache.delete(text);
           }
         }
@@ -303,17 +301,8 @@
 
   function modeHookToken(stream, {colorpicker}) {
     const token = this._token.apply(this, arguments);
-    const cm = stream.lineOracle.doc.cm;
-    const display = cm.display;
-    const oldView = !display.viewFrom && !display.viewTo;
-    const top = oldView ? display.reportedViewFrom : display.viewFrom;
-    const bottom = oldView ? display.reportedViewTo : display.viewTo;
-    const line = stream.lineOracle.line;
-    if ((top || bottom) && (line < top || line > bottom) && line !== cm.getCursor().line) {
-      return token;
-    }
     const text = stream.string;
-    const {cache} = cm.state.colorpicker;
+    const {cache} = stream.lineOracle.doc.cm.state.colorpicker;
     let lineCache = text === colorpicker.lastText ? colorpicker.lineCache : cache.get(text);
     const data = lineCache && lineCache.get(stream.pos);
     if (data) {
@@ -359,7 +348,6 @@
     let line = cm.display.viewFrom - 1;
     for (const {line: lineHandle, text} of cm.display.renderedView) {
       if (!lineHandle.parent) {
-        console.log('no lineHandle.parent');
         continue;
       }
       line++;
