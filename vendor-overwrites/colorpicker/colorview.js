@@ -21,8 +21,8 @@
   const NAMED_COLORS = getNamedColorsMap();
   const RX_COLOR = {
     hex: /#(?:[a-f\d]{3,4}|[a-f\d]{6}|[a-f\d]{8})\b/yi,
-    rgb: /rgb\((?:\s*\d{1,3},\s*){2}\d{1,3}\s*\)/yi,
-    rgba: /rgba\((?:\s*\d{1,3},\s*){3}\d*\.?\d+\s*\)/yi,
+    rgb: /rgb\((?:\s*\d{1,3}\s*,\s*){2}\d{1,3}\s*\)/yi,
+    rgba: /rgba\((?:\s*\d{1,3}\s*,\s*){3}\d*\.?\d+\s*\)/yi,
     hsl: /hsl\(\s*(?:-?\d+|-?\d*\.\d+)\s*(?:,\s*(?:-?\d+|-?\d*\.\d+)%\s*){2}\)/yi,
     hsla: /hsla\(\s*(?:-?\d+|-?\d*\.\d+)\s*(?:,\s*(?:-?\d+|-?\d*\.\d+)%\s*){2},\s*(?:-?\d+|-?\d*\.\d+)\s*\)/yi,
     named: new RegExp([...NAMED_COLORS.keys()].join('|'), 'i'),
