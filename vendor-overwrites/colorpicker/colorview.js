@@ -10,13 +10,13 @@
     mod(window.CodeMirror);
   }
 })(function (CodeMirror) {
-  const TOKEN_NAME = 'colorview';
-  const TOKEN_DOM_CLASS = 'cm-' + TOKEN_NAME;
-  const TOKEN_HOOKED_NAME = Object.assign({}, ...[
-    'atom',
-    'keyword',
-  ].map(s => ({[s]: s + ' ' + TOKEN_NAME})));
-  const BACKGROUND_CLASS = 'codemirror-colorview-background';
+  const OWN_TOKEN_NAME = 'colorview';
+  const OWN_DOM_CLASS = 'cm-' + OWN_TOKEN_NAME;
+  const OWN_BACKGROUND_CLASS = 'codemirror-colorview-background';
+  const HOOKED_TOKEN = new Map([
+    ['atom', colorizeAtom],
+    ['keyword', colorizeKeyword],
+  ].map(([name, fn]) => [name, {override: name + ' ' + OWN_TOKEN_NAME, process: fn}]));
 
   const NAMED_COLORS = getNamedColorsMap();
   const RX_COLOR = {
@@ -27,13 +27,8 @@
     hsla: /hsla\(\s*(?:-?\d+|-?\d*\.\d+)\s*(?:,\s*(?:-?\d+|-?\d*\.\d+)%\s*){2},\s*(?:-?\d+|-?\d*\.\d+)\s*\)/yi,
     named: new RegExp([...NAMED_COLORS.keys()].join('|'), 'i'),
   };
-  RX_COLOR.combined = new RegExp(
-    /(^|[\s,:"'(])/.source +
-    '(' + Object.keys(RX_COLOR).map(k => RX_COLOR[k].source).join('|') + ')' +
-    /(?:$|[\s,;"')}])/.source,
-    'gi');
 
-  const CM_EVENTS = {
+  const CodeMirrorEvents = {
     change(cm, {from, to, removed}) {
       const cache = cm.state.colorpicker.cache;
       if (removed.length === 1 && from.ch === 0 && to.ch > 0) {
@@ -49,7 +44,7 @@
     },
     update(cm) {
       if (cm.state.colorpicker.cache.size) {
-        renderMarkers(cm);
+        renderVisibleTokens(cm);
       }
     },
     keyup(cm) {
@@ -60,7 +55,7 @@
     },
     mousedown(cm, event) {
       const self = cm.state.colorpicker;
-      if (event.target.classList.contains(BACKGROUND_CLASS)) {
+      if (event.target.classList.contains(OWN_BACKGROUND_CLASS)) {
         event.preventDefault();
         self.openPopupForMarker(event.target.parentNode);
       } else {
@@ -69,73 +64,127 @@
     },
   };
 
-  class ColorMarker {
-    constructor(cm, {
-      tooltip = 'Open color picker',
-      tooltipForSwitcher = 'Switch formats: HEX -> RGB -> HSL',
-      hideDelay = 2000,
-      colorpicker,
-    } = {}) {
-      this.cm = cm;
-      this.opt = {tooltip, tooltipForSwitcher, hideDelay};
-      this.popup = cm.colorpicker ? cm.colorpicker() : colorpicker;
-      this.cache = new Map();
-      this.registerEvents();
-    }
+  function registerEvents(cm) {
+    Object.keys(CodeMirrorEvents).forEach(name => cm.on(name, CodeMirrorEvents[name]));
+  }
 
-    registerEvents() {
-      Object.keys(CM_EVENTS).forEach(name => this.cm.on(name, CM_EVENTS[name]));
-    }
+  function unregisterEvents(cm) {
+    Object.keys(CodeMirrorEvents).forEach(name => cm.off(name, CodeMirrorEvents[name]));
+  }
 
-    unregisterEvents() {
-      Object.keys(CM_EVENTS).forEach(name => this.cm.off(name, CM_EVENTS[name]));
-    }
-
-    openPopup(defaultColor = '#FFFFFF') {
-      const cursor = this.cm.getCursor();
-      const data = {
-        line: cursor.line,
-        ch: cursor.ch,
-        color: defaultColor,
-        isShortCut: true,
-      };
-      for (const {from, marker} of this.cm.getLineHandle(cursor.line).markedSpans || []) {
-        if (from <= data.ch && (marker.replacedWith || {}).colorpickerData) {
-          const {color, colorValue} = marker.replacedWith.colorpickerData;
-          if (data.ch <= from + color.length) {
-            data.ch = from;
-            data.color = color;
-            data.colorValue = colorValue;
-            break;
-          }
-        }
-      }
-      this.openPopupForMarker({colorpickerData: data});
-    }
-
-    openPopupForMarker(el) {
-      if (!this.popup) {
-        return;
-      }
-      const {line, ch, color, colorValue = color} = el.colorpickerData;
-      const pos = {line, ch};
-      const coords = this.cm.charCoords(pos);
-      let prevColor = color;
-      this.popup.show({
-        left: coords.left,
-        top: coords.bottom,
-        isShortCut: false,
-        hideDelay: this.opt.hideDelay,
-        tooltipForSwitcher: this.opt.tooltipForSwitcher,
-      }, colorValue, newColor => {
-        this.cm.replaceRange(newColor, pos, {line, ch: ch + prevColor.length}, '*colorpicker');
-        prevColor = newColor;
+  function registerHooks() {
+    const mx = CodeMirror.modeExtensions.css;
+    if (!mx || mx.token !== colorizeToken) {
+      CodeMirror.extendMode('css', {
+        token: colorizeToken,
       });
     }
+  }
 
-    closePopup() {
-      if (this.popup) {
-        this.popup.hide();
+  function unregisterHooks() {
+    const mx = CodeMirror.modeExtensions.css;
+    if (mx && mx.token === colorizeToken) {
+      delete mx.token;
+    }
+  }
+
+  function resetMode(cm) {
+    cm.setOption('mode', cm.getMode().name);
+  }
+
+  function colorizeToken(stream, state) {
+    const token = this._token.apply(this, arguments);
+    const hookedToken = token && HOOKED_TOKEN.get(token);
+    if (!token || !hookedToken) {
+      return token;
+    }
+    const data = state.colorpicker = (state.colorpicker || {});
+    const cache = data.cache = (data.cache || stream.lineOracle.doc.cm.state.colorpicker.cache);
+    const string = stream.string;
+    const sameString = string === data.lastString;
+
+    data.lastString = string;
+
+    let lineCache = data.lineCache = (sameString ? data.lineCache : cache.get(string));
+    if (lineCache && lineCache.get(stream.pos)) {
+      return hookedToken.override;
+    }
+
+    const color = hookedToken.process(stream);
+    if (color) {
+      if (!lineCache) {
+        lineCache = data.lineCache = new Map();
+        cache.set(string, lineCache);
+      }
+      lineCache.set(stream.pos, color);
+      return hookedToken.override;
+    }
+
+    return token;
+  }
+
+  function colorizeAtom(stream) {
+    const {start, pos, string} = stream;
+    const maybeHex = string.charAt(start) === '#';
+    const s = !maybeHex && string.charAt(pos) === '(' && string.slice(start, pos).toLowerCase();
+    if (maybeHex || (s === 'rgb' || s === 'rgba' || s === 'hsl' || s === 'hsla')) {
+      const rx = maybeHex ? RX_COLOR.hex : RX_COLOR[s];
+      rx.lastIndex = start;
+      const match = rx.exec(string);
+      return match && {color: match[0]};
+    }
+  }
+
+  function colorizeKeyword(stream) {
+    const {start, pos, string} = stream;
+    if (string.charAt(start) !== '!') {
+      const color = string.slice(start, pos);
+      const colorValue = NAMED_COLORS.get(color.toLowerCase());
+      return colorValue && {color, colorValue};
+    }
+  }
+
+  function renderVisibleTokens(cm) {
+    const {cache} = cm.state.colorpicker;
+    let line = cm.display.viewFrom - 1;
+    for (const {line: lineHandle, text} of cm.display.renderedView) {
+      if (!lineHandle.parent) {
+        continue;
+      }
+      line++;
+      const styles = lineHandle.styles;
+      if (!styles) {
+        continue;
+      }
+      const lineCache = cache.get(lineHandle.text);
+      if (!lineCache) {
+        continue;
+      }
+      let elementIndex = 0;
+      let elements;
+      for (let i = 1; i < styles.length; i += 2) {
+        const token = styles[i + 1];
+        if (!token || !token.includes(OWN_TOKEN_NAME)) {
+          continue;
+        }
+        const data = lineCache.get(styles[i]);
+        if (!data) {
+          continue;
+        }
+        elements = elements || text.getElementsByClassName(OWN_DOM_CLASS);
+        const el = elements[elementIndex++];
+        if (el.colorpickerData && el.colorpickerData.color === data.color) {
+          continue;
+        }
+        const ch = styles[i] - data.color.length;
+        el.colorpickerData = Object.assign({line, ch}, data);
+        let bg = el.firstElementChild;
+        if (!bg) {
+          bg = document.createElement('div');
+          bg.className = OWN_BACKGROUND_CLASS;
+          el.appendChild(bg);
+        }
+        bg.style.setProperty('background-color', data.color, 'important');
       }
     }
   }
@@ -293,123 +342,91 @@
     ]);
   }
 
-  function modeHookStart() {
-    const state = this._startState.apply(this, arguments);
-    state.colorpicker = {};
-    return state;
-  }
+  class ColorMarker {
+    constructor(cm, {
+      tooltip = 'Open color picker',
+      tooltipForSwitcher = 'Switch formats: HEX -> RGB -> HSL',
+      hideDelay = 2000,
+      colorpicker,
+      forceUpdate,
+    } = {}) {
+      this.cm = cm;
+      this.opt = {tooltip, tooltipForSwitcher, hideDelay};
+      this.popup = cm.colorpicker ? cm.colorpicker() : colorpicker;
+      this.cache = new Map();
+      registerHooks(cm);
+      registerEvents(cm);
+      if (forceUpdate) {
+        resetMode(cm);
+      }
+    }
 
-  function modeHookToken(stream, {colorpicker}) {
-    const token = this._token.apply(this, arguments);
-    const text = stream.string;
-    const {cache} = stream.lineOracle.doc.cm.state.colorpicker;
-    let lineCache = text === colorpicker.lastText ? colorpicker.lineCache : cache.get(text);
-    const data = lineCache && lineCache.get(stream.pos);
-    if (data) {
-      return TOKEN_HOOKED_NAME[token];
+    destroy() {
+      unregisterHooks(this.cm);
+      unregisterEvents(this.cm);
+      resetMode(this.cm);
+      this.cm.state.colorpicker = null;
     }
-    let color, colorValue;
-    switch (token) {
-      case 'atom': {
-        const s = stream.current().toLowerCase();
-        const maybeHex = s.startsWith('#');
-        if (maybeHex ||
-            (s === 'rgb' || s === 'rgba' || s === 'hsl' || s === 'hsla') &&
-              text.charAt(stream.pos) === '(') {
-          const rx = maybeHex ? RX_COLOR.hex : RX_COLOR[s];
-          rx.lastIndex = stream.start;
-          const match = rx.exec(text);
-          color = match && {color: match[0]};
-        }
-        break;
-      }
-      case 'keyword': {
-        color = stream.current();
-        colorValue = NAMED_COLORS.get(color.toLowerCase());
-        color = colorValue && {color, colorValue};
-        break;
-      }
-    }
-    if (!color) {
-      return token;
-    }
-    if (!lineCache) {
-      lineCache = new Map();
-      cache.set(text, lineCache);
-    }
-    lineCache.set(stream.pos, color);
-    colorpicker.lastText = text;
-    colorpicker.lineCache = lineCache;
-    return TOKEN_HOOKED_NAME[token];
-  }
 
-  function renderMarkers(cm) {
-    const {cache} = cm.state.colorpicker;
-    let line = cm.display.viewFrom - 1;
-    for (const {line: lineHandle, text} of cm.display.renderedView) {
-      if (!lineHandle.parent) {
-        continue;
+    openPopup(defaultColor = '#FFFFFF') {
+      const cursor = this.cm.getCursor();
+      const data = {
+        line: cursor.line,
+        ch: cursor.ch,
+        color: defaultColor,
+        isShortCut: true,
+      };
+      for (const {from, marker} of this.cm.getLineHandle(cursor.line).markedSpans || []) {
+        if (from <= data.ch && (marker.replacedWith || {}).colorpickerData) {
+          const {color, colorValue} = marker.replacedWith.colorpickerData;
+          if (data.ch <= from + color.length) {
+            data.ch = from;
+            data.color = color;
+            data.colorValue = colorValue;
+            break;
+          }
+        }
       }
-      line++;
-      const styles = lineHandle.styles;
-      if (!styles) {
-        continue;
+      this.openPopupForMarker({colorpickerData: data});
+    }
+
+    openPopupForMarker(el) {
+      if (!this.popup) {
+        return;
       }
-      const lineCache = cache.get(lineHandle.text);
-      if (!lineCache) {
-        continue;
-      }
-      let elementIndex = 0;
-      let elements;
-      for (let i = 1; i < styles.length; i += 2) {
-        const token = styles[i + 1];
-        if (!token || !token.includes(TOKEN_NAME)) {
-          continue;
-        }
-        const data = lineCache.get(styles[i]);
-        if (!data) {
-          continue;
-        }
-        elements = elements || text.getElementsByClassName(TOKEN_DOM_CLASS);
-        const el = elements[elementIndex++];
-        if (el.colorpickerData && el.colorpickerData.color === data.color) {
-          continue;
-        }
-        el.colorpickerData = data;
-        el.colorpickerData.ch = styles[i] - data.color.length;
-        el.colorpickerData.line = line;
-        let bg = el.firstElementChild;
-        if (!bg) {
-          bg = document.createElement('div');
-          bg.className = BACKGROUND_CLASS;
-          el.appendChild(bg);
-        }
-        bg.style.setProperty('background-color', data.color, 'important');
+      const {line, ch, color, colorValue = color} = el.colorpickerData;
+      const pos = {line, ch};
+      const coords = this.cm.charCoords(pos);
+      let prevColor = color;
+      this.popup.show({
+        left: coords.left,
+        top: coords.bottom,
+        isShortCut: false,
+        hideDelay: this.opt.hideDelay,
+        tooltipForSwitcher: this.opt.tooltipForSwitcher,
+      }, colorValue, newColor => {
+        this.cm.replaceRange(newColor, pos, {line, ch: ch + prevColor.length}, '*colorpicker');
+        prevColor = newColor;
+      });
+    }
+
+    closePopup() {
+      if (this.popup) {
+        this.popup.hide();
       }
     }
   }
 
   CodeMirror.defineOption('colorpicker', false, (cm, value, oldValue) => {
-    // an existing instance is removed first
-    // even if both value and oldValue are truthy
-    if (oldValue && oldValue !== CodeMirror.Init) {
-      const self = cm.state.colorpicker;
-      if (self) {
-        self.unregisterEvents();
-        self.removeMarkers(cm);
-        cm.state.colorpicker = null;
-      }
+    if (oldValue && oldValue !== CodeMirror.Init && cm.state.colorpicker) {
+      cm.state.colorpicker.destroy();
     }
     if (value) {
       cm.state.colorpicker = new ColorMarker(cm, value);
-      if (value.forceUpdate) {
-        cm.refresh();
-      }
     }
   });
 
-  CodeMirror.extendMode('css', {
-    startState: modeHookStart,
-    token: modeHookToken,
-  });
+  // initial runMode is performed by CodeMirror before setting our option
+  // so we register the hooks right away - not a problem as our js is loaded on demand
+  registerHooks();
 });
