@@ -530,9 +530,7 @@
             var colorString = color.format(rgb, 'rgb');
             setOpacityColorBar(colorString);
 
-            if (typeof colorpickerCallback == 'function') {
-                colorpickerCallback(getFormattedColor(format));
-            }
+            colorpickerCallback(getFormattedColor(format));
         }
 
         function setMainColor(e) {
@@ -907,6 +905,7 @@
 
         function initEvent() {
             window.addEventListener('keydown', EventDialogKeyDown, true);
+            window.addEventListener('close-colorpicker-popup', hide, true);
             addEvent($root.el, 'input', updateColorFromInput);
             addEvent($color.el, 'mousedown', EventColorMouseDown);
             addEvent($color.el, 'mouseup', EventColorMouseUp);
@@ -966,7 +965,8 @@
 
         function destroy() {
             window.removeEventListener('keydown', EventDialogKeyDown, true);
-            removeEvent($root.el, 'input', updateColorFromInput());
+            window.removeEventListener('close-colorpicker-popup', hide, true);
+            removeEvent($root.el, 'input', updateColorFromInput);
             removeEvent($color.el, 'mousedown', EventColorMouseDown);
             removeEvent($color.el, 'mouseup', EventColorMouseUp);
             removeEvent($drag_bar.el, 'mousedown', EventDragBarMouseDown);
@@ -978,7 +978,7 @@
             removeEvent($formatChangeButton.el, 'click', EventFormatChangeClick);
 
             // remove color picker callback
-            colorpickerCallback = undefined;
+            colorpickerCallback = () => {};
         }
 
         function initFormat () {
@@ -1247,11 +1247,11 @@
             $formatChangeButton.el.title = opt.tooltipForSwitcher || '';
 
             initColor(color);
-            getVisibleColorInputs().pop().focus();
+            getVisibleColorInputs()[0].focus();
 
             // define colorpicker callback
             colorpickerCallback = function (colorString) {
-                if (getVisibleColorInputs().every(el => el.checkValidity())) {
+                if (userActivity && getVisibleColorInputs().every(el => el.checkValidity())) {
                     lastOutputColor = colorString.replace(/\b0\./g, '.');
                     callback(lastOutputColor);
                 }

@@ -55,7 +55,7 @@
     },
     mousedown(cm, event) {
       const self = cm.state.colorpicker;
-      self.closePopup();
+      window.dispatchEvent(new Event('close-colorpicker-popup'));
       if (event.button === 0 && event.target.classList.contains(OWN_BACKGROUND_CLASS)) {
         event.preventDefault();
         self.openPopupForToken(event.target.parentNode);
