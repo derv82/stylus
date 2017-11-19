@@ -1330,8 +1330,12 @@
                 clearTimeout(timerCloseColorPicker);
                 isColorPickerShow = false;
                 if (prevFocusedElement) {
-                    prevFocusedElement.focus();
+                    const {scrollY: y, scrollX: x} = window;
+                    prevFocusedElement.focus({preventScroll: true});
                     prevFocusedElement = null;
+                    if (window.scrollY !== y || window.scrollX !== x) {
+                        window.scrollTo(x, y);
+                    }
                 }
             }
 
