@@ -18,8 +18,8 @@
   background-repeat: repeat;
 }
 
-.cm-colorview + .cm-colorview.cm-matchhighlight::before,
-.cm-colorview.cm-matchhighlight + .cm-colorview::before {
+.cm-colorview + .cm-colorview.cm-overlay::before,
+.cm-colorview.cm-overlay + .cm-colorview::before {
   content: none;
 }
 
