@@ -10,6 +10,7 @@
     CodeMirror.defineExtension("colorpicker", function () {
 
         var cm  = this;
+        var options = {};
 
         var color = {
 
@@ -43,7 +44,8 @@
                     case 'hex': {
                         const rgbStr = (0x1000000 + (r << 16) + (g << 8) + (b | 0)).toString(16).slice(1);
                         const aStr = hasA ? (0x100 + Math.round(a * 255)).toString(16).slice(1) : '';
-                        return "#" + (rgbStr + aStr).replace(/^(.)\1(.)\2(.)\3(?:(.)\4)?$/, '$1$2$3$4');
+                        const hexStr = `#${rgbStr + aStr}`.replace(/^#(.)\1(.)\2(.)\3(?:(.)\4)?$/, '#$1$2$3$4');
+                        return options.hexUppercase ? hexStr.toUpperCase() : hexStr.toLowerCase();
                     }
                     case 'rgb':
                         return hasA ?
@@ -241,6 +243,7 @@
         var $body, $root, $hue, $color, $value, $saturation, $drag_pointer, $drag_bar,
             $control, $controlPattern, $controlColor, $hueContainer, $opacity, $opacityContainer, $opacityColorBar, $formatChangeButton,
             $opacity_drag_bar, $information, $informationChange;
+        var $hexLettercase = {};
 
         var currentA, currentH, currentS, currentV;
         var $hexCode;
@@ -248,7 +251,6 @@
         var $hsl_h, $hsl_s, $hsl_l, $hsl_a;
         var cssPrefix = getCssValuePrefix();
 
-        var colorpickerCallback = function () {};
         var counter = 0;
         var cached = {};
         var isColorPickerShow = false;
@@ -917,7 +919,9 @@
             addEvent(document, 'mouseup', EventDocumentMouseUp);
             addEvent(document, 'mousemove', EventDocumentMouseMove);
 
-            addEvent($formatChangeButton.el, 'click', EventFormatChangeClick)
+            addEvent($formatChangeButton.el, 'click', EventFormatChangeClick);
+            addEvent($hexLettercase.true, 'click', toggleHexLettercase);
+            addEvent($hexLettercase.false, 'click', toggleHexLettercase);
         }
 
         function checkColorPickerClass(el) {
@@ -976,9 +980,8 @@
             removeEvent(document, 'mouseup', EventDocumentMouseUp);
             removeEvent(document, 'mousemove', EventDocumentMouseMove);
             removeEvent($formatChangeButton.el, 'click', EventFormatChangeClick);
-
-            // remove color picker callback
-            colorpickerCallback = () => {};
+            removeEvent($hexLettercase.true, 'click', toggleHexLettercase);
+            removeEvent($hexLettercase.false, 'click', toggleHexLettercase);
         }
 
         function initFormat () {
@@ -1019,9 +1022,18 @@
 
                 $hexCode = new dom('input', 'input', { type: 'text', spellcheck: false,
                     pattern: /^\s*#([a-fA-F\d]{3}([a-fA-F\d]([a-fA-F\d]{2}([a-fA-F\d]{2})?)?)?)\s*$/.source });
+                $hexLettercase = {
+                    true: new dom('span', 'hex-upper').setText('HEX').el,
+                    false: new dom('span', 'hex-lower').setText('hex').el,
+                };
 
                 field.append($hexCode);
-                field.append(new dom('div', 'title').setText('HEX'));
+                field.append(
+                  new dom('div', 'title')
+                    .append($hexLettercase.true)
+                    .append('\xA0/\xA0')
+                    .append($hexLettercase.false)
+                );
 
                 item.append(field);
 
@@ -1224,7 +1236,21 @@
             });
         }
 
-        function show (opt, color,  callback) {
+        function toggleHexLettercase() {
+            options.hexUppercase = !options.hexUppercase;
+            renderHexLettercase();
+            updateColorFromInput();
+        }
+
+        function renderHexLettercase() {
+            const isUpper = !!options.hexUppercase;
+            $hexLettercase[isUpper].dataset.active = '';
+            delete $hexLettercase[!isUpper].dataset.active;
+            const value = $hexCode.el.value;
+            $hexCode.el.value = isUpper ? value.toUpperCase() : value.toLowerCase();
+        }
+
+        function show (opt) {
             initEvent();
             $root.appendTo(document.body);
 
@@ -1242,20 +1268,14 @@
 
             isShortCut = opt.isShortCut || false;
 
-            lastOutputColor = color;
+            options = opt;
+            lastOutputColor = opt.color;
             prevFocusedElement = document.activeElement;
             $formatChangeButton.el.title = opt.tooltipForSwitcher || '';
 
-            initColor(color);
+            initColor(opt.color);
+            renderHexLettercase();
             getVisibleColorInputs()[0].focus();
-
-            // define colorpicker callback
-            colorpickerCallback = function (colorString) {
-                if (userActivity && getVisibleColorInputs().every(el => el.checkValidity())) {
-                    lastOutputColor = colorString.replace(/\b0\./g, '.');
-                    callback(lastOutputColor);
-                }
-            }
 
             // define hide delay
             hideDelay = opt.hideDelay || 2000;
@@ -1310,6 +1330,17 @@
                 }
             }
 
+        }
+
+        function colorpickerCallback(colorString) {
+            if (
+                userActivity &&
+                getVisibleColorInputs().every(el => el.checkValidity()) &&
+                typeof options.callback === 'function'
+            ) {
+                lastOutputColor = options.newColor = colorString.replace(/\b0\./g, '.');
+                options.callback(options);
+            }
         }
 
         init();

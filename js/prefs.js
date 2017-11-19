@@ -55,7 +55,11 @@ var prefs = new function Prefs() {
     'editor.contextDelete': contextDeleteMissing(), // "Delete" item in context menu
 
     'editor.appliesToLineWidget': true, // show applies-to line widget on the editor
-    'editor.colorpicker': true,     // show CSS colors as clickable colored rectangles
+
+    // show CSS colors as clickable colored rectangles
+    'editor.colorpicker': true,
+    // #DEAD or #beef
+    'editor.colorpicker.hexUppercase': false,
 
     'iconset': 0,                   // 0 = dark-themed icon
                                     // 1 = light-themed icon

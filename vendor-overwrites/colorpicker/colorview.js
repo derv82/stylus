@@ -344,13 +344,19 @@
   class ColorMarker {
     constructor(cm, {
       tooltip = 'Open color picker',
-      tooltipForSwitcher = 'Switch formats: HEX -> RGB -> HSL',
-      hideDelay = 2000,
+      popupOptions = {},
       colorpicker,
       forceUpdate,
     } = {}) {
       this.cm = cm;
-      this.opt = {tooltip, tooltipForSwitcher, hideDelay};
+      this.options = {
+        tooltip,
+        popup: Object.assign({
+          hideDelay: 2000,
+          hexUppercase: false,
+          tooltipForSwitcher: 'Switch formats: HEX -> RGB -> HSL',
+        }, popupOptions),
+      };
       this.popup = cm.colorpicker ? cm.colorpicker() : colorpicker;
       this.cache = new Map();
       registerHooks(cm);
@@ -389,32 +395,35 @@
       this.openPopupForToken({colorpickerData: data});
     }
 
-    openPopupForToken(el) {
-      if (!this.popup) {
-        return;
+    openPopupForToken({colorpickerData}) {
+      if (this.popup) {
+        const {left, bottom: top} = this.cm.charCoords(colorpickerData);
+        this.popup.show(Object.assign(this.options.popup, colorpickerData, {
+          top,
+          left,
+          cm: this.cm,
+          isShortCut: false,
+          prevColor: colorpickerData.color,
+          callback: ColorMarker.popupOnChange,
+        }));
       }
-      const {line, ch, color, colorValue = color} = el.colorpickerData;
-      const from = {line, ch};
-      const coords = this.cm.charCoords(from);
-      let prevColor = color;
-      this.popup.show({
-        left: coords.left,
-        top: coords.bottom,
-        isShortCut: false,
-        hideDelay: this.opt.hideDelay,
-        tooltipForSwitcher: this.opt.tooltipForSwitcher,
-      }, colorValue, newColor => {
-        const to = {line, ch: ch + prevColor.length};
-        if (this.cm.getRange(from, to) !== newColor) {
-          this.cm.replaceRange(newColor, from, to, '*colorpicker');
-        }
-        prevColor = newColor;
-      });
     }
 
     closePopup() {
       if (this.popup) {
         this.popup.hide();
+      }
+    }
+
+    static popupOnChange(state) {
+      const {cm, line, ch, newColor, embedderCallback} = state;
+      const to = {line, ch: ch + state.prevColor.length};
+      if (cm.getRange(state, to) !== newColor) {
+        state.prevColor = newColor;
+        cm.replaceRange(newColor, state, to, '*colorpicker');
+      }
+      if (typeof embedderCallback === 'function') {
+        embedderCallback(state);
       }
     }
   }

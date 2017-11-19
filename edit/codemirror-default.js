@@ -129,18 +129,21 @@
       '/vendor-overwrites/colorpicker/colorpicker.js',
       '/vendor-overwrites/colorpicker/colorview.js',
     ])).then(() => {
-      const isStartup = !CodeMirror.setOption;
-      const options = enabled && {
+      CodeMirror.defaults.colorpicker = enabled && {
+        forceUpdate: editors.length > 0,
         tooltip: t('colorpickerTooltip'),
-        tooltipForSwitcher: t('colorpickerSwitchFormatTooltip'),
-        hideDelay: 5000,
-        forceUpdate: !isStartup,
+        popupOptions: {
+          tooltipForSwitcher: t('colorpickerSwitchFormatTooltip'),
+          hexUppercase: prefs.get('editor.colorpicker.hexUppercase'),
+          hideDelay: 5000,
+          embedderCallback: state => {
+            if (state && state.hexUppercase !== prefs.get('editor.colorpicker.hexUppercase')) {
+              prefs.set('editor.colorpicker.hexUppercase', state.hexUppercase);
+            }
+          },
+        },
       };
-      if (isStartup) {
-        CodeMirror.defaults.colorpicker = options;
-      } else {
-        CodeMirror.setOption('colorpicker', options);
-      }
+      editors.forEach(cm => cm.setOption('colorpicker', CodeMirror.defaults.colorpicker));
     });
   initBlockers.push(toggleColorpicker(null, prefs.get('editor.colorpicker')));
   prefs.subscribe(['editor.colorpicker'], toggleColorpicker);
