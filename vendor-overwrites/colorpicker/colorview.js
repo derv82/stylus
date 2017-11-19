@@ -29,19 +29,6 @@
   };
 
   const CodeMirrorEvents = {
-    change(cm, {from, to, text, removed}) {
-      const cache = cm.state.colorpicker.cache;
-      if (removed.length === 1 && from.ch === 0 && to.ch > 0) {
-        cache.delete(removed[0]);
-      } else if (CodeMirror.cmpPos(from, to) || text.length > 1 || text[0]) {
-        for (const [text, lineCache] of cache.entries()) {
-          const line = lineCache.size && lineCache.values().next().value.line;
-          if (line === undefined || line >= from.line && line <= to.line) {
-            cache.delete(text);
-          }
-        }
-      }
-    },
     update(cm) {
       if (cm.state.colorpicker.cache.size) {
         renderVisibleTokens(cm);
@@ -116,6 +103,7 @@
         cache.set(string, lineCache);
       }
       lineCache.set(stream.start, color);
+      lineCache.set('lastAccessTime', performance.now());
       return hookedToken.override;
     }
 
@@ -159,6 +147,7 @@
       if (!lineCache) {
         continue;
       }
+      let lineCacheAlive = false;
       let elementIndex = 0;
       let elements;
       for (let i = 1; i < styles.length; i += 2) {
@@ -184,6 +173,26 @@
           el.appendChild(bg);
         }
         bg.style.setProperty('background-color', data.color, 'important');
+        lineCacheAlive = true;
+      }
+      if (lineCacheAlive) {
+        lineCache.set('lastAccessTime', performance.now());
+      }
+    }
+    trimCache(cm);
+  }
+
+  function trimCache(cm, debounced) {
+    if (!debounced) {
+      clearTimeout(trimCache.timer);
+      trimCache.timer = setTimeout(trimCache, 10e3, cm, true);
+      return;
+    }
+    const cutoff = performance.now() - 60e3;
+    const {cache} = cm.state.colorpicker;
+    for (const [text, lineCache] of cache.entries()) {
+      if (lineCache.get('lastAccessTime') < cutoff) {
+        cache.delete(text);
       }
     }
   }
