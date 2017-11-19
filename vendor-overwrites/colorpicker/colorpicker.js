@@ -245,7 +245,7 @@
             $opacity_drag_bar, $information, $informationChange;
         var $hexLettercase = {};
 
-        var currentA, currentH, currentS, currentV;
+        var currentA, currentH, currentS, currentV, currentFormat;
         var $hexCode;
         var $rgb_r, $rgb_g, $rgb_b, $rgb_a;
         var $hsl_h, $hsl_s, $hsl_l, $hsl_a;
@@ -500,7 +500,7 @@
             return color.RGBtoHSL(rgb.r, rgb.g, rgb.b);
         }
 
-        function getFormattedColor (format = $information.data('format'), alpha = currentA) {
+        function getFormattedColor (format = currentFormat, alpha = currentA) {
             const converted = format === 'hsl' ? convertHSL() : convertRGB();
             converted.a = isNaN(alpha) || alpha === 1 ? undefined : alpha;
             return color.format(converted, format);
@@ -512,15 +512,13 @@
 
         function setInputColor() {
 
-            var format = $information.data('format') || 'hex';
-
             var rgb = null;
-            if (format == 'hex') {
+            if (currentFormat == 'hex') {
                 $hexCode.val(convertHEX());
-            } else if (format == 'rgb') {
+            } else if (currentFormat == 'rgb') {
                 var rgb = convertRGB();
                 setRGBInput(rgb.r, rgb.g, rgb.b);
-            } else if (format == 'hsl') {
+            } else if (currentFormat == 'hsl') {
                 var hsl = convertHSL();
                 setHSLInput(hsl.h, hsl.s, hsl.l);
             }
@@ -532,7 +530,7 @@
             var colorString = color.format(rgb, 'rgb');
             setOpacityColorBar(colorString);
 
-            colorpickerCallback(getFormattedColor(format));
+            colorpickerCallback(getFormattedColor(currentFormat));
         }
 
         function setMainColor(e) {
@@ -754,19 +752,19 @@
                     s: parseFloat($hsl_s),
                     l: parseFloat($hsl_l),
                     a: parseFloat(el.value),
-                }, $information.data('format'));
+                }, currentFormat);
             }
             return isValid;
         }
 
-        function getVisibleColorInputs(format = $information.data('format')) {
+        function getVisibleColorInputs(format = currentFormat) {
             return Array.prototype.slice.call(
                 $information.el.querySelectorAll(`.information-item.${format} input`)
             );
         }
 
         function updateColorFromInput(e) {
-            const format = $information.data('format');
+            const format = currentFormat;
             const inputs = getVisibleColorInputs(format);
             if (!inputs.every(validateInput)) {
                 return;
@@ -824,7 +822,7 @@
         }
 
         function setCurrentFormat (format) {
-            $information.data('format', format);
+            currentFormat = format;
             initFormat();
         }
 
@@ -985,30 +983,19 @@
         }
 
         function initFormat () {
-            var current_format = $information.data('format') || 'hex';
-
             $information.removeClass('hex');
             $information.removeClass('rgb');
             $information.removeClass('hsl');
-            $information.addClass(current_format);
+            $information.addClass(currentFormat);
         }
 
         function nextFormat() {
-            var current_format = $information.data('format') || 'hex';
-
-            var next_format = 'hex';
-            if (current_format == 'hex') {
-                next_format = 'rgb';
-            } else if (current_format == 'rgb') {
-                next_format = 'hsl';
-            } else if (current_format == 'hsl') {
-                next_format = 'hex';
-            }
+            var nextFormat = {hex: 'rgb', rgb :'hsl', hsl :'hex'}[currentFormat];
             currentA = isNaN(currentA) ? 1 : currentA;
 
-            $information.removeClass(current_format);
-            $information.addClass(next_format);
-            $information.data('format', next_format);
+            $information.removeClass(currentFormat);
+            $information.addClass(nextFormat);
+            currentFormat = nextFormat;
 
             setInputColor();
         }

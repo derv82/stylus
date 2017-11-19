@@ -395,15 +395,16 @@
       this.openPopupForToken({colorpickerData: data});
     }
 
-    openPopupForToken({colorpickerData}) {
+    openPopupForToken({colorpickerData: data}) {
       if (this.popup) {
-        const {left, bottom: top} = this.cm.charCoords(colorpickerData, 'window');
-        this.popup.show(Object.assign(this.options.popup, colorpickerData, {
+        const {left, bottom: top} = this.cm.charCoords(data, 'window');
+        this.popup.show(Object.assign(this.options.popup, data, {
           top,
           left,
           cm: this.cm,
+          color: data.colorValue || data.color,
+          prevColor: data.color,
           isShortCut: false,
-          prevColor: colorpickerData.color,
           callback: ColorMarker.popupOnChange,
         }));
       }
