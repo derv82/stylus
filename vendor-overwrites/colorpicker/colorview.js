@@ -19,6 +19,7 @@
   ].map(([name, fn]) => [name, {override: name + ' ' + OWN_TOKEN_NAME, process: fn}]));
 
   const NAMED_COLORS = getNamedColorsMap();
+  const TRANSPARENT = 'rgba(0, 0, 0, 0)'; // as per the CSS spec
   const RX_COLOR = {
     hex: /#(?:[a-f\d]{3,4}|[a-f\d]{6}|[a-f\d]{8})\b/yi,
     rgb: /rgb\((?:\s*\d{1,3}\s*,\s*){2}\d{1,3}\s*\)/yi,
@@ -112,7 +113,11 @@
 
   function colorizeAtom(stream) {
     const {start, pos, string} = stream;
-    const maybeHex = string.charAt(start) === '#';
+    const c1 = string.charAt(start);
+    if (c1 === 't' && string.slice(start, pos).toLowerCase() === 'transparent') {
+      return {color: TRANSPARENT};
+    }
+    const maybeHex = c1 === '#';
     const s = !maybeHex && string.charAt(pos) === '(' && string.slice(start, pos).toLowerCase();
     if (maybeHex || (s === 'rgb' || s === 'rgba' || s === 'hsl' || s === 'hsla')) {
       const rx = maybeHex ? RX_COLOR.hex : RX_COLOR[s];
