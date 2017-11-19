@@ -397,7 +397,7 @@
 
     openPopupForToken({colorpickerData}) {
       if (this.popup) {
-        const {left, bottom: top} = this.cm.charCoords(colorpickerData);
+        const {left, bottom: top} = this.cm.charCoords(colorpickerData, 'window');
         this.popup.show(Object.assign(this.options.popup, colorpickerData, {
           top,
           left,
