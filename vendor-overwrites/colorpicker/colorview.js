@@ -193,13 +193,15 @@
   function trimCache(cm, debounced) {
     if (!debounced) {
       clearTimeout(trimCache.timer);
-      trimCache.timer = setTimeout(trimCache, 10e3, cm, true);
+      trimCache.timer = setTimeout(trimCache, 20e3, cm, true);
       return;
     }
     const cutoff = performance.now() - 60e3;
     const {cache} = cm.state.colorpicker;
+    const textToKeep = new Set();
+    cm.doc.iter(({text}) => textToKeep.add(text));
     for (const [text, lineCache] of cache.entries()) {
-      if (lineCache.get('lastAccessTime') < cutoff) {
+      if (lineCache.get('lastAccessTime') < cutoff && !textToKeep.has(text)) {
         cache.delete(text);
       }
     }
