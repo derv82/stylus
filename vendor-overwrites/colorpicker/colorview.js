@@ -117,7 +117,7 @@
   function colorizeAtom(stream) {
     const {start, pos, string} = stream;
     const c1 = string.charAt(start);
-    if (c1 === 't' && string.slice(start, pos).toLowerCase() === 'transparent') {
+    if ((c1 === 't' || c1 === 'T') && string.slice(start, pos).toLowerCase() === 'transparent') {
       return TRANSPARENT;
     }
     const maybeHex = c1 === '#';
