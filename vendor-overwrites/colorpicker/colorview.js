@@ -19,7 +19,10 @@
   ].map(([name, fn]) => [name, {override: name + ' ' + OWN_TOKEN_NAME, process: fn}]));
 
   const NAMED_COLORS = getNamedColorsMap();
-  const TRANSPARENT = 'rgba(0, 0, 0, 0)'; // as per the CSS spec
+  const TRANSPARENT = {
+    color: 'transparent',
+    colorValue: 'rgba(0, 0, 0, 0)', // as per the CSS spec
+  };
   const RX_COLOR = {
     hex: /#(?:[a-f\d]{3,4}|[a-f\d]{6}|[a-f\d]{8})\b/yi,
     rgb: /rgb\((?:\s*\d{1,3}\s*,\s*){2}\d{1,3}\s*\)/yi,
@@ -115,7 +118,7 @@
     const {start, pos, string} = stream;
     const c1 = string.charAt(start);
     if (c1 === 't' && string.slice(start, pos).toLowerCase() === 'transparent') {
-      return {color: TRANSPARENT};
+      return TRANSPARENT;
     }
     const maybeHex = c1 === '#';
     const s = !maybeHex && string.charAt(pos) === '(' && string.slice(start, pos).toLowerCase();
