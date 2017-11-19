@@ -1225,7 +1225,10 @@
             // set top position for color picker
             var elementScreenTop = opt.top - $body.el.scrollTop ;
             if (height + elementScreenTop > window.innerHeight) {
-                elementScreenTop -= (height + elementScreenTop) - window.innerHeight;
+                elementScreenTop = window.innerHeight - height;
+            }
+            if (elementScreenTop < opt.top) {
+                elementScreenTop = opt.top - height - 20;
             }
             if (elementScreenTop < 0) { elementScreenTop = 0; }
 
@@ -1323,6 +1326,8 @@
                 destroy();
                 $root.hide();
                 $root.remove();
+                clearTimeout(timerFadeColorPicker);
+                clearTimeout(timerCloseColorPicker);
                 isColorPickerShow = false;
                 if (prevFocusedElement) {
                     prevFocusedElement.focus();
